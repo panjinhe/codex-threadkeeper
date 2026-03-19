@@ -14,94 +14,34 @@ English | [中文](README_ZH.md)
 
 </div>
 
-## Why This Exists
+## What It Solves
 
-Codex stores session metadata in two places:
+Codex session visibility can break after you switch `model_provider`.
 
-- rollout files under `~/.codex/sessions` and `~/.codex/archived_sessions`
-- SQLite state in `~/.codex/state_5.sqlite`
+Typical symptom:
 
-When you switch `model_provider`, Codex session pickers and SQLite-backed thread lists may only show sessions whose stored `model_provider` matches the current provider.
+- old sessions are visible under one provider
+- then disappear after switching to another provider
+- `codex resume` and Codex App may disagree because session metadata is stored in both rollout files and SQLite
 
-That means a common workflow breaks:
+`codex-provider-sync` fixes that by updating both:
 
-1. Use official OpenAI login for a while.
-2. Switch to a relay or custom provider such as `apigather` or `newapi`.
-3. Open `codex resume`, `codex fork`, or a Codex app/app-server session list.
-4. Old sessions appear to be missing.
+- `~/.codex/sessions` and `~/.codex/archived_sessions`
+- `~/.codex/state_5.sqlite`
 
-`codex-provider-sync` fixes that by normalizing the stored provider metadata for your historical sessions to the provider you want to use now.
-
-## What It Does
-
-The tool updates both storage layers used by Codex session listing:
-
-- rewrites the first `session_meta` line of every rollout file in:
-  - `~/.codex/sessions`
-  - `~/.codex/archived_sessions`
-- updates `threads.model_provider` in:
-  - `~/.codex/state_5.sqlite`
-
-It also:
-
-- creates a backup before every sync
-- uses a lock directory to avoid concurrent modifications
-- provides a restore command for rollback
-- skips rollout files that are actively locked by the current Codex/App session, then reports them for a later retry
-
-It does **not**:
-
-- replace the official `codex` command
-- manage `auth.json` or third-party login tools for you
-- create provider definitions in `config.toml`
-
-## How It Works
-
-There are four commands:
-
-- `codex-provider status`
-  - Reads your current `model_provider` from `~/.codex/config.toml`
-  - Counts provider distribution in rollout files and SQLite
-- `codex-provider sync`
-  - Syncs all historical sessions to the current provider, or to `--provider <id>` if specified
-- `codex-provider switch <provider-id>`
-  - Updates the root-level `model_provider` in `config.toml`
-  - Immediately runs the same sync process
-- `codex-provider restore <backup-dir>`
-  - Restores both rollout metadata and SQLite state from a previous backup
-
-Why file-only edits are not enough:
-
-- Codex often uses `state_5.sqlite` for thread lists
-- editing only `sessions/*.jsonl` can leave SQLite out of sync
-- this tool updates both sides together
-
-## Installation
-
-### Option 1: Install directly from GitHub
+## Install
 
 ```bash
 npm install -g github:Dailin521/codex-provider-sync
 ```
 
-### Option 2: Clone and install locally
-
-```bash
-git clone https://github.com/Dailin521/codex-provider-sync.git
-cd codex-provider-sync
-npm install -g .
-```
-
-### Requirements
+Requirements:
 
 - Node.js `24+`
-- Codex using the standard `~/.codex` storage layout
-- Recommended: close Codex / app-server / Codex App before running sync or restore
-- If one live session still keeps its rollout file open, `sync` will skip that file and continue
+- standard `~/.codex` layout
+- Windows is the primary tested target for now
 
 ## Quick Start
-
-### Most common workflow
 
 If you already switched auth/provider using your usual method:
 
@@ -109,142 +49,76 @@ If you already switched auth/provider using your usual method:
 codex-provider sync
 ```
 
-That command:
-
-- reads the current provider from `~/.codex/config.toml`
-- rewrites historical session metadata to that provider
-- makes those sessions visible again to official Codex session listings
-
-### Switch provider and sync in one step
-
-Use this when the target provider is already defined in `config.toml`:
+If you want to change the root `model_provider` and sync history in one step:
 
 ```bash
 codex-provider switch openai
 codex-provider switch apigather
 ```
 
-### Check current state before syncing
+Check current state first:
 
 ```bash
 codex-provider status
 ```
 
-Example output:
+Rollback from a backup:
+
+```bash
+codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\<timestamp>
+```
+
+## AI Quick Run
+
+If you want an AI assistant to handle this in one shot, copy this prompt:
 
 ```text
-Codex home: C:\Users\you\.codex
-Current provider: openai
-Configured providers: apigather, openai
+Help me fix Codex session visibility with codex-provider-sync.
 
-Rollout files:
-  sessions: apigather: 199, openai: 135
-  archived_sessions: apigather: 2, openai: 10
-
-SQLite state:
-  sessions: apigather: 199, openai: 135
-  archived_sessions: apigather: 2, openai: 10
+Steps:
+1. Run `codex-provider status`.
+2. If my current provider is already correct, run `codex-provider sync`.
+3. If I explicitly want to switch provider, run `codex-provider switch <provider-id>` instead.
+4. If `state_5.sqlite` is currently in use, tell me to close Codex / Codex App / app-server and retry.
+5. If sync skips locked rollout files, tell me which files were skipped and remind me to rerun `codex-provider sync` later.
+6. Summarize the final provider counts in rollout files and SQLite.
 ```
 
-## Command Reference
+Quick mapping:
 
-### `codex-provider status`
+- inspect only: `codex-provider status`
+- fix visibility under current provider: `codex-provider sync`
+- switch provider and sync: `codex-provider switch openai`
+- roll back a mistake: `codex-provider restore <backup-dir>`
 
-Show:
+## Commands
 
-- current provider from `config.toml`
-- configured custom providers
-- provider distribution in rollout files
-- provider distribution in SQLite
+- `codex-provider status`
+  - shows current provider and provider distribution in rollout files and SQLite
+- `codex-provider sync`
+  - syncs history to the current provider
+  - `--provider <id>` overrides the target provider
+  - if root `model_provider` is missing, it falls back to `openai`
+- `codex-provider switch <provider-id>`
+  - updates root `model_provider` in `config.toml`
+  - immediately runs a sync
+- `codex-provider restore <backup-dir>`
+  - restores a previous backup
 
 ```bash
 codex-provider status
-codex-provider status --codex-home C:\Users\you\.codex
-```
-
-### `codex-provider sync`
-
-Sync all session metadata to the current provider or a manually specified provider.
-
-If root-level `model_provider` is missing from `~/.codex/config.toml`, `sync` treats `openai` as the default provider.
-
-```bash
 codex-provider sync
 codex-provider sync --provider openai
-codex-provider sync --provider apigather
-codex-provider sync --codex-home C:\Users\you\.codex
-```
-
-Use `sync` when:
-
-- another tool already changed your auth or provider config
-- you manually edited `config.toml`
-- you want to resync history without changing config again
-
-### `codex-provider switch <provider-id>`
-
-Update root-level `model_provider` in `config.toml`, then sync all history to that provider.
-
-```bash
 codex-provider switch openai
 codex-provider switch apigather
-codex-provider switch newapi
-```
-
-Important:
-
-- `openai` is always treated as available
-- custom providers must already exist under `[model_providers.<id>]` in `config.toml`
-- this command does not log you in or update external auth tools
-
-### `codex-provider restore <backup-dir>`
-
-Restore a previous backup if you synced to the wrong provider.
-
-```bash
+codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\20260319T042708906Z
+codex-provider status --codex-home C:\Users\you\.codex
+codex-provider sync --codex-home C:\Users\you\.codex
+codex-provider switch apigather --codex-home C:\Users\you\.codex
 codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\20260319T042708906Z
 ```
 
-## Recommended Usage Patterns
-
-### Official OpenAI login + relay switching
-
-If you use official login sometimes and relay providers at other times:
-
-1. Switch auth the way you normally do.
-2. Make sure `config.toml` points to the provider you want to use now.
-3. Run:
-
-```bash
-codex-provider sync
-```
-
-4. Open official Codex session listing again.
-
-### You want one command to change provider and fix history
-
-If your provider is already defined in `config.toml`:
-
-```bash
-codex-provider switch <provider-id>
-```
-
-### You use another provider-switching tool
-
-For example:
-
-- official `codex login`
-- manual config edits
-- your own automation
-- third-party switchers
-
-In that case, treat `codex-provider-sync` as the final metadata normalization step:
-
-```bash
-codex-provider sync
-```
-
-## Safety, Backup, and Restore
+## Safety
 
 Before each sync, the tool creates a backup under:
 
@@ -252,81 +126,21 @@ Before each sync, the tool creates a backup under:
 ~/.codex/backups_state/provider-sync/<timestamp>
 ```
 
-Each backup includes:
-
-- a copy of `state_5.sqlite`
-- `state_5.sqlite-shm` and `state_5.sqlite-wal` if present
-- the original first line of every modified rollout file
-- a copy of `config.toml`
-
-It also creates a lock here while running:
+It also uses:
 
 ```text
 ~/.codex/tmp/provider-sync.lock
 ```
 
-If you see a lock error:
+- It does not replace official `codex`.
+- It does not manage `auth.json` or third-party login tools.
+- It does not rewrite message history, titles, cwd, or timestamps.
+- If `state_5.sqlite` is in use, close Codex / Codex App / app-server and retry.
+- If a live session keeps one rollout file open, `sync` skips that file and reports it. Rerun later.
 
-- close Codex and related apps
-- verify no sync is already running
-- retry
+## For AI Agents
 
-## FAQ
-
-### Will this modify my conversations?
-
-No. It only changes provider metadata used for session discovery.
-
-It does not rewrite:
-
-- thread IDs
-- message history
-- titles
-- cwd
-- timestamps
-
-### Does this replace the official `codex` command?
-
-No. You continue using official Codex exactly as before.
-
-This tool only fixes historical provider metadata so official Codex can see those sessions again.
-
-### Does it work with Codex App / app-server style session lists?
-
-If the client is using the same standard `.codex` session storage, syncing both rollout files and SQLite is the key step that makes those sessions visible again.
-
-### Does `switch` also log me into the provider?
-
-No.
-
-`switch` only:
-
-- updates root-level `model_provider` in `config.toml`
-- syncs history to that provider
-
-You still handle auth separately if your provider requires it.
-
-### What does `state_5.sqlite is currently in use` mean?
-
-It means official Codex, Codex App, or another process still has the SQLite state database open.
-
-Close Codex, close the Codex App or app-server process, then run `sync` or `restore` again.
-
-### What if a rollout file is locked by the current session?
-
-`sync` skips locked rollout files and continues updating the rest of the history plus SQLite.
-
-You will see the skipped file paths in the command output. Rerun `sync` later after closing the current session if you want those files rewritten too.
-
-### What if my custom provider is not accepted?
-
-`switch <provider-id>` validates that the provider exists in `config.toml`, except for built-in `openai`.
-
-If the provider is missing:
-
-1. add it to `config.toml`
-2. or switch it via your existing tool
-3. then run `codex-provider sync`
+For a fuller machine-oriented version, see [AGENTS.md](AGENTS.md).
 
 ## Development
 
@@ -336,12 +150,6 @@ cd codex-provider-sync
 npm test
 node ./src/cli.js status --codex-home C:\path\to\.codex
 ```
-
-Current implementation notes:
-
-- Node.js only
-- uses built-in `node:sqlite`
-- tested on Windows first
 
 ## License
 
