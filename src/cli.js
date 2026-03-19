@@ -57,6 +57,12 @@ function summarizeSync(result, label) {
     `Updated rollout files: ${result.changedSessionFiles}`,
     `Updated SQLite rows: ${result.sqliteRowsUpdated}${result.sqlitePresent ? "" : " (state_5.sqlite not found)"}`
   ];
+  if (result.skippedLockedRolloutFiles?.length) {
+    const preview = result.skippedLockedRolloutFiles.slice(0, 5).join(", ");
+    const extraCount = result.skippedLockedRolloutFiles.length - Math.min(result.skippedLockedRolloutFiles.length, 5);
+    lines.push(`Skipped locked rollout files: ${result.skippedLockedRolloutFiles.length}`);
+    lines.push(`Locked file(s): ${preview}${extraCount > 0 ? ` (+${extraCount} more)` : ""}`);
+  }
   return lines.join("\n");
 }
 

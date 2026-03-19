@@ -45,6 +45,7 @@ Codex 的会话元数据并不只保存在一个地方，而是分成两层：
 - 每次同步前自动备份
 - 运行期间创建锁目录，避免并发修改
 - 提供 `restore` 回滚命令
+- 如果当前 Codex/App 会话正占用某个 rollout 文件，`sync` 会跳过它并在结果里列出来
 
 它**不会**：
 
@@ -105,6 +106,7 @@ npm install -g .
 - Node.js `24+`
 - Codex 使用标准 `~/.codex` 存储结构
 - 建议运行 `sync` / `restore` 前，先关闭 Codex、app-server、相关 App
+- 如果某个活跃会话仍然占着 rollout 文件，`sync` 会跳过该文件并继续处理其余历史会话
 
 ## 快速开始
 
@@ -318,6 +320,12 @@ codex-provider sync
 这表示官方 Codex、Codex App，或者其他进程还占着 SQLite 状态库。
 
 先把 Codex、Codex App、app-server 之类相关进程关掉，再重新执行 `sync` 或 `restore`。
+
+### 如果当前会话锁住了某个 rollout 文件怎么办？
+
+`sync` 会跳过被锁住的 rollout 文件，并继续更新其它历史会话以及 SQLite。
+
+命令输出里会直接列出被跳过的文件路径。等当前会话结束后，再补跑一次 `sync`，就能把这些文件也统一掉。
 
 ### 为什么我的自定义 provider 不被接受？
 

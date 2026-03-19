@@ -46,6 +46,7 @@ It also:
 - creates a backup before every sync
 - uses a lock directory to avoid concurrent modifications
 - provides a restore command for rollback
+- skips rollout files that are actively locked by the current Codex/App session, then reports them for a later retry
 
 It does **not**:
 
@@ -95,6 +96,7 @@ npm install -g .
 - Node.js `24+`
 - Codex using the standard `~/.codex` storage layout
 - Recommended: close Codex / app-server / Codex App before running sync or restore
+- If one live session still keeps its rollout file open, `sync` will skip that file and continue
 
 ## Quick Start
 
@@ -308,6 +310,12 @@ You still handle auth separately if your provider requires it.
 It means official Codex, Codex App, or another process still has the SQLite state database open.
 
 Close Codex, close the Codex App or app-server process, then run `sync` or `restore` again.
+
+### What if a rollout file is locked by the current session?
+
+`sync` skips locked rollout files and continues updating the rest of the history plus SQLite.
+
+You will see the skipped file paths in the command output. Rerun `sync` later after closing the current session if you want those files rewritten too.
 
 ### What if my custom provider is not accepted?
 

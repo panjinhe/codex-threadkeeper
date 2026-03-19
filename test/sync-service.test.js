@@ -129,6 +129,7 @@ test("runSync rewrites rollout files and sqlite, then restore reverts both", asy
   const syncResult = await runSync({ codexHome });
   assert.equal(syncResult.targetProvider, "openai");
   assert.equal(syncResult.changedSessionFiles, 2);
+  assert.deepEqual(syncResult.skippedLockedRolloutFiles, []);
   assert.equal(syncResult.sqliteRowsUpdated, 2);
 
   const syncedSession = await fs.readFile(sessionPath, "utf8");
@@ -243,7 +244,7 @@ test("runSync leaves rollout files and sqlite untouched when sqlite is locked", 
   }
 });
 
-test("runSync leaves rollout files and sqlite untouched when a rollout file is locked", async () => {
+test("runSync skips locked rollout files and still updates sqlite", async () => {
   if (process.platform !== "win32") {
     return;
   }
@@ -257,15 +258,17 @@ test("runSync leaves rollout files and sqlite untouched when a rollout file is l
   ]);
 
   const lockProcess = await lockRolloutFile(sessionPath);
+  let result;
   try {
-    await assert.rejects(
-      () => runSync({ codexHome, sqliteBusyTimeoutMs: 0 }),
-      /Unable to (read|rewrite) rollout file because it is currently in use/
-    );
+    result = await runSync({ codexHome, sqliteBusyTimeoutMs: 0 });
   } finally {
     lockProcess.kill();
     await new Promise((resolve) => lockProcess.once("exit", resolve));
   }
+
+  assert.equal(result.changedSessionFiles, 0);
+  assert.equal(result.sqliteRowsUpdated, 1);
+  assert.deepEqual(result.skippedLockedRolloutFiles, [sessionPath]);
 
   const rollout = await fs.readFile(sessionPath, "utf8");
   assert.match(rollout, /"model_provider":"apigather"/);
@@ -275,7 +278,7 @@ test("runSync leaves rollout files and sqlite untouched when a rollout file is l
     const row = db
       .prepare("SELECT model_provider FROM threads WHERE id = ?")
       .get("thread-a");
-    assert.equal(row.model_provider, "apigather");
+    assert.equal(row.model_provider, "openai");
   } finally {
     db.close();
   }

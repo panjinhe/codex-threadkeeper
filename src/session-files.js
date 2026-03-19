@@ -14,6 +14,7 @@ function isRolloutFileBusyError(error) {
   return message.includes("ebusy")
     || message.includes("resource busy or locked")
     || message.includes("being used by another process")
+    || message.includes("currently in use")
     || message.includes("eperm");
 }
 
@@ -132,6 +133,9 @@ async function rewriteFirstLine(filePath, nextFirstLine, separator) {
 }
 
 async function findLockedFilesOnWindows(filePaths) {
+  if (!filePaths.length) {
+    return [];
+  }
   const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "codex-provider-locks-"));
   const manifestPath = path.join(tempDir, "paths.json");
   const script = `
@@ -170,8 +174,12 @@ async function findLockedFilesOnWindows(filePaths) {
   }
 }
 
-export async function collectSessionChanges(codexHome, targetProvider) {
+export async function collectSessionChanges(codexHome, targetProvider, options = {}) {
+  const {
+    skipLockedReads = false
+  } = options;
   const summaries = [];
+  const lockedPaths = [];
   const providerCounts = {
     sessions: new Map(),
     archived_sessions: new Map()
@@ -186,7 +194,16 @@ export async function collectSessionChanges(codexHome, targetProvider) {
     }
     const rolloutPaths = await listJsonlFiles(rootDir);
     for (const rolloutPath of rolloutPaths) {
-      const record = await readFirstLineRecord(rolloutPath);
+      let record;
+      try {
+        record = await readFirstLineRecord(rolloutPath);
+      } catch (error) {
+        if (skipLockedReads && isRolloutFileBusyError(error)) {
+          lockedPaths.push(rolloutPath);
+          continue;
+        }
+        throw error;
+      }
       const parsed = parseSessionMetaRecord(record.firstLine);
       if (!parsed) {
         continue;
@@ -198,6 +215,7 @@ export async function collectSessionChanges(codexHome, targetProvider) {
         parsed.payload.model_provider = targetProvider;
         summaries.push({
           path: rolloutPath,
+          threadId: parsed.payload.id ?? null,
           directory: dirName,
           originalFirstLine: record.firstLine,
           originalSeparator: record.separator,
@@ -207,7 +225,7 @@ export async function collectSessionChanges(codexHome, targetProvider) {
     }
   }
 
-  return { changes: summaries, providerCounts };
+  return { changes: summaries, lockedPaths, providerCounts };
 }
 
 export async function applySessionChanges(changes) {
@@ -232,6 +250,38 @@ export async function assertSessionFilesWritable(changes) {
   throw new Error(
     `Unable to rewrite rollout files because ${lockedPaths.length} file(s) are currently in use. Close Codex and the Codex app, then retry. Locked file(s): ${preview}${suffix}`
   );
+}
+
+export async function splitLockedSessionChanges(changes) {
+  if (!changes?.length || process.platform !== "win32") {
+    return {
+      writableChanges: changes ?? [],
+      lockedChanges: []
+    };
+  }
+
+  const lockedPaths = new Set(await findLockedFilesOnWindows(changes.map((change) => change.path)));
+  if (lockedPaths.size === 0) {
+    return {
+      writableChanges: changes,
+      lockedChanges: []
+    };
+  }
+
+  const writableChanges = [];
+  const lockedChanges = [];
+  for (const change of changes) {
+    if (lockedPaths.has(change.path)) {
+      lockedChanges.push(change);
+    } else {
+      writableChanges.push(change);
+    }
+  }
+
+  return {
+    writableChanges,
+    lockedChanges
+  };
 }
 
 export async function restoreSessionChanges(manifestEntries) {

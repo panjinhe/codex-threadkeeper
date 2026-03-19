@@ -13,9 +13,9 @@ import {
 import { createBackup, restoreBackup } from "./backup.js";
 import { acquireLock } from "./locking.js";
 import {
-  assertSessionFilesWritable,
   applySessionChanges,
   collectSessionChanges,
+  splitLockedSessionChanges,
   summarizeProviderCounts
 } from "./session-files.js";
 import {
@@ -98,13 +98,24 @@ export async function runSync({
   const releaseLock = await acquireLock(codexHome, "sync");
   let backupDir = null;
   try {
-    const { changes, providerCounts } = await collectSessionChanges(codexHome, targetProvider);
-    await assertSessionFilesWritable(changes);
+    const {
+      changes,
+      lockedPaths: lockedReadPaths,
+      providerCounts
+    } = await collectSessionChanges(codexHome, targetProvider, { skipLockedReads: true });
+    const {
+      writableChanges,
+      lockedChanges
+    } = await splitLockedSessionChanges(changes);
+    const skippedLockedRolloutFiles = [...new Set([
+      ...lockedReadPaths,
+      ...lockedChanges.map((change) => change.path)
+    ])].sort((left, right) => left.localeCompare(right));
     await assertSqliteWritable(codexHome, { busyTimeoutMs: sqliteBusyTimeoutMs });
     backupDir = await createBackup({
       codexHome,
       targetProvider,
-      sessionChanges: changes,
+      sessionChanges: writableChanges,
       configPath,
       configBackupText
     });
@@ -115,11 +126,11 @@ export async function runSync({
         codexHome,
         targetProvider,
         async () => {
-          if (changes.length === 0) {
+          if (writableChanges.length === 0) {
             return;
           }
           sessionRestoreNeeded = true;
-          await applySessionChanges(changes);
+          await applySessionChanges(writableChanges);
         },
         { busyTimeoutMs: sqliteBusyTimeoutMs }
       );
@@ -128,7 +139,8 @@ export async function runSync({
         targetProvider,
         previousProvider: current.provider,
         backupDir,
-        changedSessionFiles: changes.length,
+        changedSessionFiles: writableChanges.length,
+        skippedLockedRolloutFiles,
         sqliteRowsUpdated: sqliteResult.updatedRows,
         sqlitePresent: sqliteResult.databasePresent,
         rolloutCountsBefore: summarizeProviderCounts(providerCounts)
