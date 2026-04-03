@@ -87,6 +87,14 @@ async function writeConfig(codexHome, modelProviderLine = "") {
   await fs.writeFile(path.join(codexHome, "config.toml"), config, "utf8");
 }
 
+async function writeGlobalState(codexHome, state) {
+  await fs.writeFile(path.join(codexHome, ".codex-global-state.json"), JSON.stringify(state), "utf8");
+}
+
+async function readGlobalState(codexHome) {
+  return JSON.parse(await fs.readFile(path.join(codexHome, ".codex-global-state.json"), "utf8"));
+}
+
 async function writeStateDb(codexHome, rows) {
   const dbPath = path.join(codexHome, "state_5.sqlite");
   const db = new DatabaseSync(dbPath);
@@ -96,12 +104,13 @@ async function writeStateDb(codexHome, rows) {
         id TEXT PRIMARY KEY,
         model_provider TEXT,
         archived INTEGER NOT NULL DEFAULT 0,
+        cwd TEXT,
         first_user_message TEXT NOT NULL DEFAULT ''
       )
     `);
-    const stmt = db.prepare("INSERT INTO threads (id, model_provider, archived, first_user_message) VALUES (?, ?, ?, ?)");
+    const stmt = db.prepare("INSERT INTO threads (id, model_provider, archived, cwd, first_user_message) VALUES (?, ?, ?, ?, ?)");
     for (const row of rows) {
-      stmt.run(row.id, row.model_provider, row.archived ? 1 : 0, row.first_user_message ?? "hello");
+      stmt.run(row.id, row.model_provider, row.archived ? 1 : 0, row.cwd ?? null, row.first_user_message ?? "hello");
     }
   } finally {
     db.close();
@@ -192,13 +201,18 @@ async function runCli(args) {
 test("runSync rewrites rollout files and sqlite, then restore reverts both", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "electron-saved-workspace-roots": ["E:\\Existing"],
+    "project-order": ["E:\\Existing"],
+    "active-workspace-roots": ["E:\\Existing"]
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   const archivedPath = path.join(codexHome, "archived_sessions", "2026", "03", "18", "rollout-b.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeRollout(archivedPath, "thread-b", "newapi");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "apigather", archived: false },
-    { id: "thread-b", model_provider: "newapi", archived: true }
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\Alpha" },
+    { id: "thread-b", model_provider: "newapi", archived: true, cwd: "\\\\?\\E:\\Beta" }
   ]);
 
   const syncResult = await runSync({ codexHome });
@@ -206,6 +220,7 @@ test("runSync rewrites rollout files and sqlite, then restore reverts both", asy
   assert.equal(typeof syncResult.backupDurationMs, "number");
   assert.ok(syncResult.backupDurationMs >= 0);
   assert.equal(syncResult.changedSessionFiles, 2);
+  assert.equal(syncResult.addedSidebarProjects, 2);
   assert.deepEqual(syncResult.skippedLockedRolloutFiles, []);
   assert.equal(syncResult.sqliteRowsUpdated, 2);
 
@@ -213,6 +228,9 @@ test("runSync rewrites rollout files and sqlite, then restore reverts both", asy
   const syncedArchived = await fs.readFile(archivedPath, "utf8");
   assert.match(syncedSession, /"model_provider":"openai"/);
   assert.match(syncedArchived, /"model_provider":"openai"/);
+  const syncedGlobalState = await readGlobalState(codexHome);
+  assert.deepEqual(syncedGlobalState["electron-saved-workspace-roots"], ["E:\\Existing", "E:\\Alpha", "E:\\Beta"]);
+  assert.deepEqual(syncedGlobalState["project-order"], ["E:\\Existing", "E:\\Alpha", "E:\\Beta"]);
 
   const db = new DatabaseSync(path.join(codexHome, "state_5.sqlite"));
   try {
@@ -234,6 +252,12 @@ test("runSync rewrites rollout files and sqlite, then restore reverts both", asy
   const restoredArchived = await fs.readFile(archivedPath, "utf8");
   assert.match(restoredSession, /"model_provider":"apigather"/);
   assert.match(restoredArchived, /"model_provider":"newapi"/);
+  const restoredGlobalState = await readGlobalState(codexHome);
+  assert.deepEqual(restoredGlobalState, {
+    "electron-saved-workspace-roots": ["E:\\Existing"],
+    "project-order": ["E:\\Existing"],
+    "active-workspace-roots": ["E:\\Existing"]
+  });
 });
 
 test("runSync reports stage progress and backup duration", async () => {
@@ -242,7 +266,7 @@ test("runSync reports stage progress and backup duration", async () => {
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "apigather", archived: false }
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\SidebarProject" }
   ]);
 
   const progressEvents = [];
@@ -264,6 +288,7 @@ test("runSync reports stage progress and backup duration", async () => {
       "create_backup",
       "update_sqlite",
       "rewrite_rollout_files",
+      "sync_sidebar_projects",
       "clean_backups"
     ]
   );
@@ -272,6 +297,9 @@ test("runSync reports stage progress and backup duration", async () => {
   assert.ok(backupCompleteEvent);
   assert.equal(backupCompleteEvent.backupDir, result.backupDir);
   assert.ok(backupCompleteEvent.durationMs >= 0);
+  const sidebarCompleteEvent = progressEvents.find((event) => event.stage === "sync_sidebar_projects" && event.status === "complete");
+  assert.ok(sidebarCompleteEvent);
+  assert.equal(sidebarCompleteEvent.addedCount, 1);
 });
 
 test("runSwitch updates config and syncs provider metadata", async () => {
@@ -280,16 +308,20 @@ test("runSwitch updates config and syncs provider metadata", async () => {
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "openai");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "openai", archived: false }
+    { id: "thread-a", model_provider: "openai", archived: false, cwd: "E:\\SwitchSidebar" }
   ]);
 
   const result = await runSwitch({ codexHome, provider: "apigather" });
   assert.equal(result.targetProvider, "apigather");
+  assert.equal(result.addedSidebarProjects, 1);
 
   const config = await fs.readFile(path.join(codexHome, "config.toml"), "utf8");
   assert.match(config, /^model_provider = "apigather"/m);
   const rollout = await fs.readFile(sessionPath, "utf8");
   assert.match(rollout, /"model_provider":"apigather"/);
+  const globalState = await readGlobalState(codexHome);
+  assert.deepEqual(globalState["electron-saved-workspace-roots"], ["E:\\SwitchSidebar"]);
+  assert.deepEqual(globalState["project-order"], ["E:\\SwitchSidebar"]);
 });
 
 test("status reports implicit default provider and rollout/sqlite counts", async () => {
@@ -330,7 +362,7 @@ test("runSync leaves rollout files and sqlite untouched when sqlite is locked", 
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "apigather", archived: false }
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\LockedProject" }
   ]);
 
   const lockDb = new DatabaseSync(path.join(codexHome, "state_5.sqlite"));
@@ -373,7 +405,7 @@ test("runSync skips locked rollout files and still updates sqlite", async () => 
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "apigather", archived: false }
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\LockedProject" }
   ]);
 
   const lockProcess = await lockRolloutFile(sessionPath);
@@ -386,6 +418,7 @@ test("runSync skips locked rollout files and still updates sqlite", async () => 
   }
 
   assert.equal(result.changedSessionFiles, 0);
+  assert.equal(result.addedSidebarProjects, 1);
   assert.equal(result.sqliteRowsUpdated, 1);
   assert.deepEqual(result.skippedLockedRolloutFiles, [sessionPath]);
 
@@ -401,6 +434,76 @@ test("runSync skips locked rollout files and still updates sqlite", async () => 
   } finally {
     db.close();
   }
+});
+
+test("runSync adds missing sidebar projects even when rollout and sqlite providers are already aligned", async () => {
+  const { codexHome } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "openai");
+  await writeStateDb(codexHome, [
+    { id: "thread-a", model_provider: "openai", archived: false, cwd: "E:\\MissingSidebar" }
+  ]);
+
+  const result = await runSync({ codexHome });
+  assert.equal(result.changedSessionFiles, 0);
+  assert.equal(result.sqliteRowsUpdated, 0);
+  assert.equal(result.addedSidebarProjects, 1);
+
+  const globalState = await readGlobalState(codexHome);
+  assert.deepEqual(globalState["electron-saved-workspace-roots"], ["E:\\MissingSidebar"]);
+  assert.deepEqual(globalState["project-order"], ["E:\\MissingSidebar"]);
+});
+
+test("runSync ignores worktree-only cwd entries when syncing sidebar projects", async () => {
+  const { codexHome } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "openai");
+  await writeStateDb(codexHome, [
+    {
+      id: "thread-a",
+      model_provider: "openai",
+      archived: false,
+      cwd: path.join(codexHome, "worktrees", "1234", "Project")
+    }
+  ]);
+
+  const result = await runSync({ codexHome });
+  assert.equal(result.changedSessionFiles, 0);
+  assert.equal(result.sqliteRowsUpdated, 0);
+  assert.equal(result.addedSidebarProjects, 0);
+  await assert.rejects(fs.access(path.join(codexHome, ".codex-global-state.json")));
+});
+
+test("runSync fails on invalid global state json and rolls back rollout/sqlite changes", async () => {
+  const { codexHome } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  await fs.writeFile(path.join(codexHome, ".codex-global-state.json"), "{not valid json", "utf8");
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "apigather");
+  await writeStateDb(codexHome, [
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\BrokenState" }
+  ]);
+
+  await assert.rejects(
+    () => runSync({ codexHome }),
+    /Invalid \.codex-global-state\.json/
+  );
+
+  const rollout = await fs.readFile(sessionPath, "utf8");
+  assert.match(rollout, /"model_provider":"apigather"/);
+
+  const db = new DatabaseSync(path.join(codexHome, "state_5.sqlite"));
+  try {
+    const row = db.prepare("SELECT model_provider FROM threads WHERE id = ?").get("thread-a");
+    assert.equal(row.model_provider, "apigather");
+  } finally {
+    db.close();
+  }
+
+  const globalStateText = await fs.readFile(path.join(codexHome, ".codex-global-state.json"), "utf8");
+  assert.equal(globalStateText, "{not valid json");
 });
 
 test("applySessionChanges skips rollout files that changed after collection", async () => {
@@ -505,6 +608,10 @@ test("restoreBackup only restores rollout files that were actually applied", asy
 
   await updateSessionBackupManifest(backupDir, []);
   await writeRollout(sessionPath, "thread-a", "manual");
+  await writeGlobalState(codexHome, {
+    "electron-saved-workspace-roots": ["E:\\ShouldBeRemoved"],
+    "project-order": ["E:\\ShouldBeRemoved"]
+  });
 
   await restoreBackup(backupDir, codexHome, {
     restoreConfig: false,
@@ -514,6 +621,7 @@ test("restoreBackup only restores rollout files that were actually applied", asy
 
   const rollout = await fs.readFile(sessionPath, "utf8");
   assert.match(rollout, /"model_provider":"manual"/);
+  await assert.rejects(fs.access(path.join(codexHome, ".codex-global-state.json")));
 });
 
 test("pruneBackups removes the oldest backup directories", async () => {
@@ -558,7 +666,7 @@ test("runSync auto-prunes backups to the default retention count", async () => {
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "apigather", archived: false }
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\BackupDefault" }
   ]);
 
   for (let index = 0; index < DEFAULT_BACKUP_RETENTION_COUNT; index += 1) {
@@ -583,7 +691,7 @@ test("runSync uses a custom automatic backup retention count", async () => {
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "apigather", archived: false }
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\BackupCustom" }
   ]);
 
   for (let index = 0; index < 4; index += 1) {
@@ -614,17 +722,19 @@ test("cli sync prints stage progress and backup timing", async () => {
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
-    { id: "thread-a", model_provider: "apigather", archived: false }
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\CliSidebar" }
   ]);
 
   const result = await runCli(["sync", "--codex-home", codexHome]);
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /\[1\/6\] Scanning rollout files\.\.\./);
-  assert.match(result.stdout, /\[2\/6\] Checking locked rollout files\.\.\./);
-  assert.match(result.stdout, /\[3\/6\] Creating backup\.\.\./);
-  assert.match(result.stdout, /\[4\/6\] Updating SQLite\.\.\./);
-  assert.match(result.stdout, /\[5\/6\] Rewriting rollout files\.\.\./);
-  assert.match(result.stdout, /\[6\/6\] Cleaning backups\.\.\./);
+  assert.match(result.stdout, /\[1\/7\] Scanning rollout files\.\.\./);
+  assert.match(result.stdout, /\[2\/7\] Checking locked rollout files\.\.\./);
+  assert.match(result.stdout, /\[3\/7\] Creating backup\.\.\./);
+  assert.match(result.stdout, /\[4\/7\] Updating SQLite\.\.\./);
+  assert.match(result.stdout, /\[5\/7\] Rewriting rollout files\.\.\./);
+  assert.match(result.stdout, /\[6\/7\] Syncing sidebar projects\.\.\./);
+  assert.match(result.stdout, /\[7\/7\] Cleaning backups\.\.\./);
   assert.match(result.stdout, /Backup created in .*: .+/);
   assert.match(result.stdout, /Backup creation time: /);
+  assert.match(result.stdout, /Added sidebar projects: 1/);
 });

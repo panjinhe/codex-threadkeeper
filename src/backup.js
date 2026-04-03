@@ -5,8 +5,10 @@ import {
   BACKUP_NAMESPACE,
   DB_FILE_BASENAME,
   DEFAULT_BACKUP_RETENTION_COUNT,
+  GLOBAL_STATE_FILE_BASENAME,
   defaultBackupRoot
 } from "./constants.js";
+import { globalStatePath } from "./global-state.js";
 import { assertSessionFilesWritable, restoreSessionChanges } from "./session-files.js";
 import { assertSqliteWritable } from "./sqlite-state.js";
 
@@ -55,6 +57,11 @@ export async function createBackup({
     await copyIfPresent(configPath, path.join(backupDir, "config.toml"));
   }
 
+  const globalStateIncluded = await copyIfPresent(
+    globalStatePath(codexHome),
+    path.join(backupDir, GLOBAL_STATE_FILE_BASENAME)
+  );
+
   const sessionManifest = {
     version: 1,
     namespace: BACKUP_NAMESPACE,
@@ -83,7 +90,8 @@ export async function createBackup({
         targetProvider,
         createdAt: sessionManifest.createdAt,
         dbFiles: copiedDbFiles,
-        changedSessionFiles: sessionChanges.length
+        changedSessionFiles: sessionChanges.length,
+        globalStateIncluded
       },
       null,
       2
@@ -151,7 +159,8 @@ export async function restoreBackup(backupDir, codexHome, options = {}) {
   const {
     restoreConfig = true,
     restoreDatabase = true,
-    restoreSessions = true
+    restoreSessions = true,
+    restoreGlobalState = true
   } = options;
   const metadataPath = path.join(backupDir, "metadata.json");
   const metadata = JSON.parse(await fs.readFile(metadataPath, "utf8"));
@@ -169,6 +178,15 @@ export async function restoreBackup(backupDir, codexHome, options = {}) {
   const configBackupPath = path.join(backupDir, "config.toml");
   if (restoreConfig) {
     await copyIfPresent(configBackupPath, path.join(codexHome, "config.toml"));
+  }
+
+  if (restoreGlobalState && Object.prototype.hasOwnProperty.call(metadata, "globalStateIncluded")) {
+    const targetGlobalStatePath = globalStatePath(codexHome);
+    if (metadata.globalStateIncluded) {
+      await copyIfPresent(path.join(backupDir, GLOBAL_STATE_FILE_BASENAME), targetGlobalStatePath);
+    } else {
+      await removeIfPresent(targetGlobalStatePath);
+    }
   }
 
   if (restoreDatabase) {

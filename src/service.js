@@ -24,6 +24,10 @@ import {
 } from "./backup.js";
 import { acquireLock } from "./locking.js";
 import {
+  restoreGlobalStateSnapshot,
+  syncSidebarProjects
+} from "./global-state.js";
+import {
   applySessionChanges,
   collectSessionChanges,
   restoreSessionChanges,
@@ -32,6 +36,7 @@ import {
 } from "./session-files.js";
 import {
   assertSqliteWritable,
+  readSqliteProjectPaths,
   readSqliteProviderCounts,
   updateSqliteProvider
 } from "./sqlite-state.js";
@@ -190,11 +195,14 @@ export async function runSync({
       backupDir,
       durationMs: backupDurationMs
     });
+    const sqliteProjectPaths = await readSqliteProjectPaths(codexHome);
 
     let sessionRestoreNeeded = false;
     let appliedSessionChanges = [];
+    let globalStateRestoreSnapshot = null;
     try {
       let applyResult = { appliedChanges: 0, appliedPaths: [], skippedPaths: [] };
+      let sidebarSyncResult = { addedCount: 0, addedProjects: [], modified: false };
       emitProgress(onProgress, { stage: "update_sqlite", status: "start" });
       emitProgress(onProgress, {
         stage: "rewrite_rollout_files",
@@ -205,14 +213,23 @@ export async function runSync({
         codexHome,
         targetProvider,
         async () => {
-          if (writableChanges.length === 0) {
-            return;
+          if (writableChanges.length > 0) {
+            applyResult = await applySessionChanges(writableChanges);
+            const appliedPathSet = new Set(applyResult.appliedPaths ?? []);
+            appliedSessionChanges = writableChanges.filter((change) => appliedPathSet.has(change.path));
+            sessionRestoreNeeded = appliedSessionChanges.length > 0;
+            await updateSessionBackupManifest(backupDir, appliedSessionChanges);
           }
-          applyResult = await applySessionChanges(writableChanges);
-          const appliedPathSet = new Set(applyResult.appliedPaths ?? []);
-          appliedSessionChanges = writableChanges.filter((change) => appliedPathSet.has(change.path));
-          sessionRestoreNeeded = appliedSessionChanges.length > 0;
-          await updateSessionBackupManifest(backupDir, appliedSessionChanges);
+          emitProgress(onProgress, { stage: "sync_sidebar_projects", status: "start" });
+          sidebarSyncResult = await syncSidebarProjects(codexHome, sqliteProjectPaths);
+          if (sidebarSyncResult.modified) {
+            globalStateRestoreSnapshot = sidebarSyncResult;
+          }
+          emitProgress(onProgress, {
+            stage: "sync_sidebar_projects",
+            status: "complete",
+            addedCount: sidebarSyncResult.addedCount
+          });
         },
         { busyTimeoutMs: sqliteBusyTimeoutMs }
       );
@@ -256,6 +273,7 @@ export async function runSync({
         backupDir,
         backupDurationMs,
         changedSessionFiles: applyResult.appliedChanges,
+        addedSidebarProjects: sidebarSyncResult.addedCount,
         skippedLockedRolloutFiles,
         sqliteRowsUpdated: sqliteResult.updatedRows,
         sqlitePresent: sqliteResult.databasePresent,
@@ -264,6 +282,14 @@ export async function runSync({
         autoPruneWarning
       };
     } catch (error) {
+      const restoreFailures = [];
+      if (globalStateRestoreSnapshot?.modified) {
+        try {
+          await restoreGlobalStateSnapshot(globalStateRestoreSnapshot);
+        } catch (restoreError) {
+          restoreFailures.push(`Global state restore error: ${restoreError.message}`);
+        }
+      }
       if (sessionRestoreNeeded) {
         try {
           await restoreSessionChanges(appliedSessionChanges.map((change) => ({
@@ -272,10 +298,13 @@ export async function runSync({
             originalSeparator: change.originalSeparator
           })));
         } catch (restoreError) {
-          throw new Error(
-            `Failed to restore rollout files after sync error. Original error: ${error.message}. Restore error: ${restoreError.message}`
-          );
+          restoreFailures.push(`Rollout restore error: ${restoreError.message}`);
         }
+      }
+      if (restoreFailures.length) {
+        throw new Error(
+          `Failed to restore sync side effects after error. Original error: ${error.message}. ${restoreFailures.join(" ")}`
+        );
       }
       throw error;
     }

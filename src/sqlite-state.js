@@ -38,6 +38,11 @@ function wrapSqliteBusyError(error, action) {
   );
 }
 
+function isMissingColumnError(error, columnName) {
+  const message = `${error?.message ?? ""}`.toLowerCase();
+  return message.includes(`no such column: ${columnName.toLowerCase()}`);
+}
+
 export async function readSqliteProviderCounts(codexHome) {
   const dbPath = stateDbPath(codexHome);
   try {
@@ -69,6 +74,33 @@ export async function readSqliteProviderCounts(codexHome) {
       bucket[row.model_provider] = row.count;
     }
     return result;
+  } finally {
+    db.close();
+  }
+}
+
+export async function readSqliteProjectPaths(codexHome) {
+  const dbPath = stateDbPath(codexHome);
+  try {
+    await fs.access(dbPath);
+  } catch {
+    return [];
+  }
+
+  const db = openDatabase(dbPath);
+  try {
+    const rows = db.prepare(`
+      SELECT DISTINCT cwd
+      FROM threads
+      WHERE TRIM(COALESCE(cwd, '')) <> ''
+      ORDER BY LOWER(cwd), cwd
+    `).all();
+    return rows.map((row) => row.cwd);
+  } catch (error) {
+    if (isMissingColumnError(error, "cwd")) {
+      return [];
+    }
+    throw error;
   } finally {
     db.close();
   }

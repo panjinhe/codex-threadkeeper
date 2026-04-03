@@ -61,6 +61,7 @@ function summarizeSync(result, label) {
     `Backup: ${result.backupDir}`,
     `Backup creation time: ${formatDuration(result.backupDurationMs ?? 0)}`,
     `Updated rollout files: ${result.changedSessionFiles}`,
+    `Added sidebar projects: ${result.addedSidebarProjects ?? 0}`,
     `Updated SQLite rows: ${result.sqliteRowsUpdated}${result.sqlitePresent ? "" : " (state_5.sqlite not found)"}`
   ];
   if (result.skippedLockedRolloutFiles?.length) {
@@ -121,6 +122,7 @@ const SYNC_PROGRESS_STAGES = [
   ["create_backup", "Creating backup..."],
   ["update_sqlite", "Updating SQLite..."],
   ["rewrite_rollout_files", "Rewriting rollout files..."],
+  ["sync_sidebar_projects", "Syncing sidebar projects..."],
   ["clean_backups", "Cleaning backups..."]
 ];
 
