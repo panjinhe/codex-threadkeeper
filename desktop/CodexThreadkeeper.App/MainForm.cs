@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using CodexProviderSync.Core;
+using CodexThreadkeeper.Core;
 
-namespace CodexProviderSync.App;
+namespace CodexThreadkeeper.App;
 
 public sealed class MainForm : Form
 {
@@ -96,7 +96,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Codex Provider Sync";
+        Text = "Codex Threadkeeper";
         MinimumSize = new Size(1180, 760);
         StartPosition = FormStartPosition.CenterScreen;
 

@@ -1,7 +1,7 @@
 {
-  "name": "codex-provider-sync",
+  "name": "codex-threadkeeper",
   "version": "0.2.0",
-  "description": "Synchronize Codex session provider metadata across rollout files and SQLite state.",
+  "description": "Keep Codex threads visible by syncing session metadata, SQLite state, and managed backups.",
   "type": "module",
   "files": [
     "README.md",
@@ -11,7 +11,7 @@
     "src"
   ],
   "bin": {
-    "codex-provider": "./src/cli.js"
+    "codex-threadkeeper": "./src/cli.js"
   },
   "scripts": {
     "test": "node --test"
@@ -23,7 +23,8 @@
     "codex",
     "sqlite",
     "sessions",
-    "provider"
+    "threads",
+    "backup"
   ],
   "license": "MIT"
 }

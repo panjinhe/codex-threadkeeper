@@ -135,7 +135,7 @@ async function invokeWindowsExclusiveRewriteBatch(changes, { requireOriginalMatc
     return [];
   }
 
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "codex-provider-rewrite-"));
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "codex-threadkeeper-rewrite-"));
   const manifestPath = path.join(tempDir, "changes.json");
   const script = `
 & {
@@ -176,7 +176,7 @@ async function invokeWindowsExclusiveRewriteBatch(changes, { requireOriginalMatc
 
   function Invoke-RewriteChange($change) {
     $path = [string]$change.path
-    $tmpPath = "$path.provider-sync.$PID.$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).tmp"
+    $tmpPath = "$path.threadkeeper.$PID.$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).tmp"
     $encoding = [System.Text.UTF8Encoding]::new($false)
     $source = $null
     $writer = $null
@@ -326,7 +326,7 @@ async function rewriteFirstLine(filePath, nextFirstLine, separator) {
   }
 
   const current = await readFirstLineRecord(filePath);
-  const tmpPath = `${filePath}.provider-sync.${process.pid}.${Date.now()}.tmp`;
+  const tmpPath = `${filePath}.threadkeeper.${process.pid}.${Date.now()}.tmp`;
   const writer = fs.createWriteStream(tmpPath, { encoding: "utf8" });
 
   try {
@@ -372,7 +372,7 @@ async function tryRewriteCollectedFirstLine(change) {
     return false;
   }
 
-  const tmpPath = `${change.path}.provider-sync.${process.pid}.${Date.now()}.tmp`;
+  const tmpPath = `${change.path}.threadkeeper.${process.pid}.${Date.now()}.tmp`;
   const writer = fs.createWriteStream(tmpPath, { encoding: "utf8" });
 
   try {
@@ -415,7 +415,7 @@ async function findLockedFilesOnWindows(filePaths) {
   if (!filePaths.length) {
     return [];
   }
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "codex-provider-locks-"));
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), "codex-threadkeeper-locks-"));
   const manifestPath = path.join(tempDir, "paths.json");
   const script = `
 & {

@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public sealed class SqliteStateService
 {

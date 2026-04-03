@@ -18,7 +18,7 @@ import { DEFAULT_BACKUP_RETENTION_COUNT } from "../src/constants.js";
 import { applySessionChanges, collectSessionChanges } from "../src/session-files.js";
 
 async function makeTempCodexHome() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-provider-sync-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-threadkeeper-"));
   const codexHome = path.join(root, ".codex");
   await fs.mkdir(path.join(codexHome, "sessions", "2026", "03", "19"), { recursive: true });
   await fs.mkdir(path.join(codexHome, "archived_sessions", "2026", "03", "18"), { recursive: true });
@@ -50,6 +50,10 @@ async function writeCustomRollout(filePath, payload, message = "hi") {
 }
 
 function backupRoot(codexHome) {
+  return path.join(codexHome, "backups_state", "threadkeeper");
+}
+
+function legacyBackupRoot(codexHome) {
   return path.join(codexHome, "backups_state", "provider-sync");
 }
 
@@ -61,7 +65,7 @@ async function writeBackup(codexHome, directoryName, files) {
     const metadataPath = path.join(backupDir, "metadata.json");
     const metadataContent = JSON.stringify({
       version: 1,
-      namespace: "provider-sync",
+      namespace: "threadkeeper",
       codexHome,
       targetProvider: "openai",
       createdAt: "2026-03-24T00:00:00.000Z",
@@ -80,6 +84,17 @@ async function writeBackup(codexHome, directoryName, files) {
     totalBytes += stat.size;
   }
   return totalBytes;
+}
+
+async function writeLegacyBackup(codexHome, directoryName, files) {
+  const backupDir = path.join(legacyBackupRoot(codexHome), directoryName);
+  await fs.mkdir(backupDir, { recursive: true });
+  for (const [relativePath, content] of files) {
+    const fullPath = path.join(backupDir, relativePath);
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, content, "utf8");
+  }
+  return backupDir;
 }
 
 async function writeConfig(codexHome, modelProviderLine = "") {
@@ -690,6 +705,59 @@ test("restoreBackup only restores rollout files that were actually applied", asy
   await assert.rejects(fs.access(path.join(codexHome, ".codex-global-state.json")));
 });
 
+test("runRestore accepts an explicit legacy provider-sync backup path", async () => {
+  const { codexHome } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "manual");
+
+  const legacyBackupDir = await writeLegacyBackup(codexHome, "20260319T000000000Z", [
+    ["config.toml", 'model_provider = "apigather"\n'],
+    ["metadata.json", JSON.stringify({
+      version: 1,
+      namespace: "provider-sync",
+      codexHome,
+      targetProvider: "apigather",
+      createdAt: "2026-03-19T00:00:00.000Z",
+      dbFiles: [],
+      changedSessionFiles: 1
+    }, null, 2)],
+    ["session-meta-backup.json", JSON.stringify({
+      version: 1,
+      namespace: "provider-sync",
+      codexHome,
+      targetProvider: "apigather",
+      createdAt: "2026-03-19T00:00:00.000Z",
+      files: [
+        {
+          path: sessionPath,
+          originalFirstLine: JSON.stringify({
+            timestamp: "2026-03-19T00:00:00.000Z",
+            type: "session_meta",
+            payload: {
+              id: "thread-a",
+              timestamp: "2026-03-19T00:00:00.000Z",
+              cwd: "C:\\AITemp",
+              source: "cli",
+              cli_version: "0.115.0",
+              model_provider: "apigather"
+            }
+          }),
+          originalSeparator: "\n"
+        }
+      ]
+    }, null, 2)]
+  ]);
+
+  const result = await runRestore({ codexHome, backupDir: legacyBackupDir });
+  assert.equal(result.targetProvider, "apigather");
+
+  const restoredConfig = await fs.readFile(path.join(codexHome, "config.toml"), "utf8");
+  const restoredRollout = await fs.readFile(sessionPath, "utf8");
+  assert.match(restoredConfig, /model_provider = "apigather"/);
+  assert.match(restoredRollout, /"model_provider":"apigather"/);
+});
+
 test("pruneBackups removes the oldest backup directories", async () => {
   const { codexHome } = await makeTempCodexHome();
   const oldestBytes = await writeBackup(codexHome, "20260319T000000000Z", [
@@ -713,7 +781,7 @@ test("pruneBackups removes the oldest backup directories", async () => {
 test("pruneBackups ignores directories without managed backup metadata", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeBackup(codexHome, "20260320T000000000Z", [
-    ["metadata.json", JSON.stringify({ namespace: "provider-sync" })]
+    ["metadata.json", JSON.stringify({ namespace: "threadkeeper" })]
   ]);
   const junkDirectory = path.join(backupRoot(codexHome), "manual-notes");
   await fs.mkdir(junkDirectory, { recursive: true });

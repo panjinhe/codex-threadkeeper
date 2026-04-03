@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public sealed class ProviderDiscoveryService
 {

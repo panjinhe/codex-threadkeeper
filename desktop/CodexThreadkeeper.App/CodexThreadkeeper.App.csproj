@@ -1,7 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\CodexProviderSync.Core\CodexProviderSync.Core.csproj" />
+    <ProjectReference Include="..\CodexThreadkeeper.Core\CodexThreadkeeper.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -10,9 +10,9 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>CodexProviderSync</AssemblyName>
-    <Product>Codex Provider Sync</Product>
-    <Company>Dailin521</Company>
+    <AssemblyName>CodexThreadkeeper</AssemblyName>
+    <Product>Codex Threadkeeper</Product>
+    <Company>panjinhe</Company>
   </PropertyGroup>
 
 </Project>

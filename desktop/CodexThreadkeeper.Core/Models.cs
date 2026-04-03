@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public sealed record CurrentProviderInfo(string Provider, bool Implicit);
 

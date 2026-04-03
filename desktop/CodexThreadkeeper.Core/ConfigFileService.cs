@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public sealed partial class ConfigFileService
 {

@@ -11,7 +11,7 @@ import {
 } from "../src/launcher.js";
 
 test("installWindowsLauncher creates cmd and vbs launchers", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-provider-launcher-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-threadkeeper-launcher-"));
   const codexHome = "C:\\Users\\Example User\\.codex";
 
   const result = await installWindowsLauncher({ dir, codexHome });
@@ -24,8 +24,8 @@ test("installWindowsLauncher creates cmd and vbs launchers", async () => {
   const cmdText = await fs.readFile(result.cmdPath, "utf8");
   const vbsText = await fs.readFile(result.vbsPath, "utf8");
 
-  assert.match(cmdText, /codex-provider sync --codex-home "C:\\Users\\Example User\\.codex"/);
+  assert.match(cmdText, /codex-threadkeeper sync --codex-home "C:\\Users\\Example User\\.codex"/);
   assert.match(vbsText, /Synchronization finished\./);
-  assert.match(vbsText, /Codex Provider Sync/);
-  assert.match(vbsText, /codex-provider sync --codex-home ""C:\\Users\\Example User\\.codex""/);
+  assert.match(vbsText, /Codex Threadkeeper/);
+  assert.match(vbsText, /codex-threadkeeper sync --codex-home ""C:\\Users\\Example User\\.codex""/);
 });

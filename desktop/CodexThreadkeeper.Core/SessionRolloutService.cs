@@ -2,7 +2,7 @@ using System.Buffers;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public sealed class SessionRolloutService
 {
@@ -332,7 +332,7 @@ public sealed class SessionRolloutService
         int sourceOffset,
         bool headerOnly)
     {
-        string tempPath = $"{filePath}.provider-sync.{Environment.ProcessId}.{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.tmp";
+        string tempPath = $"{filePath}.threadkeeper.{Environment.ProcessId}.{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.tmp";
 
         try
         {

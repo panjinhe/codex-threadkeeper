@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
-namespace CodexProviderSync.Core.Tests;
+namespace CodexThreadkeeper.Core.Tests;
 
 internal sealed class TestCodexHomeFixture
 {
@@ -17,7 +17,7 @@ internal sealed class TestCodexHomeFixture
 
     public static async Task<TestCodexHomeFixture> CreateAsync()
     {
-        string root = Path.Combine(Path.GetTempPath(), $"codex-provider-sync-{Guid.NewGuid():N}");
+        string root = Path.Combine(Path.GetTempPath(), $"codex-threadkeeper-{Guid.NewGuid():N}");
         string codexHome = Path.Combine(root, ".codex");
         Directory.CreateDirectory(Path.Combine(codexHome, "sessions", "2026", "03", "19"));
         Directory.CreateDirectory(Path.Combine(codexHome, "archived_sessions", "2026", "03", "18"));
@@ -88,7 +88,7 @@ internal sealed class TestCodexHomeFixture
             string metadataContent = $$"""
                 {
                   "version": 1,
-                  "namespace": "provider-sync",
+                  "namespace": "threadkeeper",
                   "codexHome": "{{CodexHome.Replace("\\", "\\\\")}}",
                   "targetProvider": "openai",
                   "createdAt": "2026-03-24T00:00:00.0000000+00:00",

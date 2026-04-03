@@ -1,10 +1,10 @@
-# Codex Provider Sync GUI
+# Codex Threadkeeper GUI
 
 ## 适用场景
 
 这是面向普通 Windows 用户的图形界面版本。
 
-如果你不想装 Node、不想打开 PowerShell，也不想记命令，直接下载发布页里的 `CodexProviderSync.exe` 双击运行即可。
+如果你不想装 Node、不想打开 PowerShell，也不想记命令，直接下载发布页里的 `CodexThreadkeeper.exe` 双击运行即可。
 
 ## 它能做什么
 
@@ -20,7 +20,7 @@
 
 ## 使用方式
 
-1. 打开 `CodexProviderSync.exe`
+1. 打开 `CodexThreadkeeper.exe`
 2. 确认顶部 `Codex Home` 路径
 3. 点击 `Refresh`
 4. 在中间列表里选择目标 Provider
@@ -32,8 +32,8 @@
 
 ## 持久化位置
 
-- GUI 设置：`%AppData%\codex-provider-sync\settings.json`
-- 备份目录：`%USERPROFILE%\.codex\backups_state\provider-sync\`
+- GUI 设置：`%AppData%\codex-threadkeeper\settings.json`
+- 备份目录：`%USERPROFILE%\.codex\backups_state\threadkeeper\`
 
 ## 注意事项
 

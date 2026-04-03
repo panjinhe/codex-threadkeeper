@@ -41,7 +41,7 @@ async function createLockDirectory(lockDir, {
   }
 }
 
-export async function acquireLock(codexHome, label = "codex-provider-sync", options = {}) {
+export async function acquireLock(codexHome, label = "codex-threadkeeper", options = {}) {
   const {
     fsImpl = fs,
     retryCount = DEFAULT_LOCK_CREATE_RETRY_COUNT,

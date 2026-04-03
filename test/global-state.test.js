@@ -34,7 +34,7 @@ test("collectSidebarProjectCandidates deduplicates case-insensitively and skips 
 });
 
 test("syncSidebarProjects appends only missing projects and preserves unrelated state", async () => {
-  const codexHome = await fs.mkdtemp(path.join(os.tmpdir(), "codex-provider-global-state-"));
+  const codexHome = await fs.mkdtemp(path.join(os.tmpdir(), "codex-threadkeeper-global-state-"));
   const filePath = path.join(codexHome, ".codex-global-state.json");
   await fs.writeFile(filePath, JSON.stringify({
     foo: "bar",

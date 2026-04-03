@@ -1,11 +1,11 @@
 <div align="center">
 
-# codex-provider-sync
+# codex-threadkeeper
 
-### Keep Codex history visible after switching between providers
+### Keep Codex threads visible and recoverable across provider changes
 
-[![CI](https://github.com/Dailin521/codex-provider-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/Dailin521/codex-provider-sync/actions/workflows/ci.yml)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/Dailin521/codex-provider-sync)
+[![CI](https://github.com/panjinhe/codex-threadkeeper/actions/workflows/ci.yml/badge.svg)](https://github.com/panjinhe/codex-threadkeeper/actions/workflows/ci.yml)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/panjinhe/codex-threadkeeper)
 [![Node](https://img.shields.io/badge/node-24%2B-brightgreen.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Community](https://img.shields.io/badge/community-LINUX%20DO-2ea043.svg)](https://linux.do/)
@@ -16,22 +16,24 @@ English | [中文](README.md)
 
 ## What It Solves
 
-Codex session visibility can break after you switch `model_provider`.
+Codex thread visibility can break after you switch `model_provider`.
 
 Typical symptom:
 
 - old sessions are visible under one provider
 - then disappear after switching to another provider
-- `codex resume` and Codex App may disagree because session metadata is stored in both rollout files and SQLite
+- the sidebar can lose project roots even though the sessions still exist
+- `codex resume` and Codex App may disagree because thread metadata is spread across rollout files, SQLite, and sidebar state
 
-`codex-provider-sync` fixes that by updating both:
+`codex-threadkeeper` keeps that state aligned by updating:
 
 - `~/.codex/sessions` and `~/.codex/archived_sessions`
 - `~/.codex/state_5.sqlite`
+- managed backups under `~/.codex/backups_state/threadkeeper`
 
 ## GUI For Windows
 
-If you want a normal Windows app instead of Node/npm, download `CodexProviderSync.exe` from Releases.
+If you want a normal Windows app instead of Node/npm, download `CodexThreadkeeper.exe` from Releases.
 
 The GUI app:
 
@@ -48,7 +50,7 @@ For GUI-specific usage notes, see [README_GUI_ZH.md](README_GUI_ZH.md).
 ## Install
 
 ```bash
-npm install -g github:Dailin521/codex-provider-sync
+npm install -g github:panjinhe/codex-threadkeeper
 ```
 
 Requirements:
@@ -63,7 +65,7 @@ For end users, the GUI EXE is the recommended path. The npm CLI remains availabl
 
 GUI:
 
-- download `CodexProviderSync.exe` from Releases
+- download `CodexThreadkeeper.exe` from Releases
 - open it and click `Refresh`
 - choose the target provider
 - click `Execute`
@@ -71,45 +73,45 @@ GUI:
 If you already switched auth/provider using your usual method:
 
 ```bash
-codex-provider sync
+codex-threadkeeper sync
 ```
 
 If you want to change the root `model_provider` and sync history in one step:
 
 ```bash
-codex-provider switch openai
-codex-provider switch apigather
+codex-threadkeeper switch openai
+codex-threadkeeper switch apigather
 ```
 
 If you want a different automatic backup retention count for one run:
 
 ```bash
-codex-provider sync --keep 5
-codex-provider switch apigather --keep 10
+codex-threadkeeper sync --keep 5
+codex-threadkeeper switch apigather --keep 10
 ```
 
 Check current state first:
 
 ```bash
-codex-provider status
+codex-threadkeeper status
 ```
 
 Install a Windows double-click launcher (placed on your Desktop by default):
 
 ```bash
-codex-provider install-windows-launcher
+codex-threadkeeper install-windows-launcher
 ```
 
 Rollback from a backup:
 
 ```bash
-codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\<timestamp>
+codex-threadkeeper restore C:\Users\you\.codex\backups_state\threadkeeper\<timestamp>
 ```
 
 Clean old managed backups manually:
 
 ```bash
-codex-provider prune-backups --keep 5
+codex-threadkeeper prune-backups --keep 5
 ```
 
 ## AI Quick Run
@@ -117,20 +119,20 @@ codex-provider prune-backups --keep 5
 If you want an AI assistant to handle this in one shot, copy this prompt:
 
 ```text
-Help me fix Codex session visibility with codex-provider-sync.
+Help me fix Codex session visibility with codex-threadkeeper.
 
 Steps:
-1. Run `codex-provider status`.
-2. If my current provider is already correct, run `codex-provider sync`.
-3. If I explicitly want to switch provider, run `codex-provider switch <provider-id>` instead.
+1. Run `codex-threadkeeper status`.
+2. If my current provider is already correct, run `codex-threadkeeper sync`.
+3. If I explicitly want to switch provider, run `codex-threadkeeper switch <provider-id>` instead.
 4. If `state_5.sqlite` is currently in use, tell me to close Codex / Codex App / app-server and retry.
-5. If sync skips locked rollout files, tell me which files were skipped and remind me to rerun `codex-provider sync` later.
+5. If sync skips locked rollout files, tell me which files were skipped and remind me to rerun `codex-threadkeeper sync` later.
 6. Summarize the final provider counts in rollout files and SQLite.
 ```
 
 If the user prefers the GUI, the AI can instead guide these steps:
 
-1. Open `CodexProviderSync.exe`
+1. Open `CodexThreadkeeper.exe`
 2. Confirm the `.codex` path
 3. Click `Refresh`
 4. Pick the target provider from the list
@@ -140,51 +142,51 @@ If the user prefers the GUI, the AI can instead guide these steps:
 
 Quick mapping:
 
-- inspect only: `codex-provider status`
-- fix visibility under current provider: `codex-provider sync`
-- switch provider and sync: `codex-provider switch openai`
-- install a desktop double-click launcher: `codex-provider install-windows-launcher`
-- roll back a mistake: `codex-provider restore <backup-dir>`
+- inspect only: `codex-threadkeeper status`
+- fix visibility under current provider: `codex-threadkeeper sync`
+- switch provider and sync: `codex-threadkeeper switch openai`
+- install a desktop double-click launcher: `codex-threadkeeper install-windows-launcher`
+- roll back a mistake: `codex-threadkeeper restore <backup-dir>`
 
 ## Commands
 
-- `codex-provider status`
+- `codex-threadkeeper status`
   - shows current provider and provider distribution in rollout files and SQLite
-- `codex-provider sync`
+- `codex-threadkeeper sync`
   - syncs history to the current provider
   - `--provider <id>` overrides the target provider
   - if root `model_provider` is missing, it falls back to `openai`
-- `codex-provider switch <provider-id>`
+- `codex-threadkeeper switch <provider-id>`
   - updates root `model_provider` in `config.toml`
   - immediately runs a sync
   - `--keep <n>` overrides how many managed backups are retained after the run
-- `codex-provider prune-backups`
+- `codex-threadkeeper prune-backups`
   - manually removes older managed backups and keeps the newest `n`
-- `codex-provider restore <backup-dir>`
+- `codex-threadkeeper restore <backup-dir>`
   - restores a previous backup
-- `codex-provider install-windows-launcher`
+- `codex-threadkeeper install-windows-launcher`
   - creates two files on the Desktop by default
-  - `Codex Provider Sync.vbs`: hidden double-click launcher with a result popup
-  - `Codex Provider Sync.cmd`: visible console version for troubleshooting
+  - `Codex Threadkeeper.vbs`: hidden double-click launcher with a result popup
+  - `Codex Threadkeeper.cmd`: visible console version for troubleshooting
   - use `--dir <path>` to choose another install directory
   - use `--codex-home <path>` to bake a fixed `CODEX_HOME` into the launcher
 
 ```bash
-codex-provider status
-codex-provider sync
-codex-provider sync --keep 5
-codex-provider sync --provider openai
-codex-provider switch openai
-codex-provider switch apigather
-codex-provider prune-backups --keep 5
-codex-provider install-windows-launcher
-codex-provider install-windows-launcher --dir D:\Tools
-codex-provider install-windows-launcher --codex-home C:\Users\you\.codex
-codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\20260319T042708906Z
-codex-provider status --codex-home C:\Users\you\.codex
-codex-provider sync --codex-home C:\Users\you\.codex
-codex-provider switch apigather --codex-home C:\Users\you\.codex
-codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\20260319T042708906Z
+codex-threadkeeper status
+codex-threadkeeper sync
+codex-threadkeeper sync --keep 5
+codex-threadkeeper sync --provider openai
+codex-threadkeeper switch openai
+codex-threadkeeper switch apigather
+codex-threadkeeper prune-backups --keep 5
+codex-threadkeeper install-windows-launcher
+codex-threadkeeper install-windows-launcher --dir D:\Tools
+codex-threadkeeper install-windows-launcher --codex-home C:\Users\you\.codex
+codex-threadkeeper restore C:\Users\you\.codex\backups_state\threadkeeper\20260319T042708906Z
+codex-threadkeeper status --codex-home C:\Users\you\.codex
+codex-threadkeeper sync --codex-home C:\Users\you\.codex
+codex-threadkeeper switch apigather --codex-home C:\Users\you\.codex
+codex-threadkeeper restore C:\Users\you\.codex\backups_state\threadkeeper\20260319T042708906Z
 ```
 
 ## Safety
@@ -192,21 +194,22 @@ codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\20260319T
 Before each sync, the tool creates a backup under:
 
 ```text
-~/.codex/backups_state/provider-sync/<timestamp>
+~/.codex/backups_state/threadkeeper/<timestamp>
 ```
 
 It also uses:
 
 ```text
-~/.codex/tmp/provider-sync.lock
+~/.codex/tmp/threadkeeper.lock
 ```
 
 - It does not replace official `codex`.
 - It does not manage `auth.json` or third-party login tools.
 - It does not rewrite message history, titles, cwd, or timestamps.
 - It keeps the newest 5 managed backups by default; GUI retention settings or CLI `--keep <n>` can override that.
-- Manual cleanup and auto-prune only touch backups created by this tool inside `backups_state/provider-sync`.
-- `Codex Provider Sync.vbs` assumes the `codex-provider` command is already available.
+- Manual cleanup and auto-prune only touch backups created by this tool inside `backups_state/threadkeeper`.
+- Older `provider-sync` backups are not auto-discovered anymore, but `codex-threadkeeper restore <backup-dir>` still works if you pass the legacy backup path explicitly.
+- `Codex Threadkeeper.vbs` assumes the `codex-threadkeeper` command is already available.
 - If `state_5.sqlite` is in use, close Codex / Codex App / app-server and retry.
 - If a live session keeps one rollout file open, `sync` skips that file and reports it. Rerun later.
 
@@ -217,10 +220,10 @@ For a fuller machine-oriented version, see [AGENTS.md](AGENTS.md).
 ## Development
 
 ```bash
-git clone https://github.com/Dailin521/codex-provider-sync.git
-cd codex-provider-sync
+git clone https://github.com/panjinhe/codex-threadkeeper.git
+cd codex-threadkeeper
 npm test
-dotnet test desktop/CodexProviderSync.Core.Tests/CodexProviderSync.Core.Tests.csproj
+dotnet test desktop/CodexThreadkeeper.Core.Tests/CodexThreadkeeper.Core.Tests.csproj
 pwsh ./scripts/publish-gui.ps1
 node ./src/cli.js status --codex-home C:\path\to\.codex
 ```

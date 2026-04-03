@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public sealed class BackupService
 {

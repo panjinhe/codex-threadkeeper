@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$project = Join-Path $repoRoot "desktop\CodexProviderSync.App\CodexProviderSync.App.csproj"
+$project = Join-Path $repoRoot "desktop\CodexThreadkeeper.App\CodexThreadkeeper.App.csproj"
 $outputDir = Join-Path $repoRoot $Output
 
 if (Test-Path $outputDir) {
@@ -15,7 +15,7 @@ if (Test-Path $outputDir) {
         Remove-Item -Recurse -Force $outputDir
     }
     catch {
-        throw "Unable to clean publish output '$outputDir'. Close CodexProviderSync.exe if it is still running, or pass -Output to publish into a different directory."
+        throw "Unable to clean publish output '$outputDir'. Close CodexThreadkeeper.exe if it is still running, or pass -Output to publish into a different directory."
     }
 }
 

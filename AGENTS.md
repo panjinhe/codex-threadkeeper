@@ -4,7 +4,7 @@ This file is for AI assistants, coding agents, and automation tools.
 
 ## Goal
 
-Help the user make historical Codex sessions visible again after switching `model_provider`.
+Help the user keep historical Codex threads visible after switching `model_provider`, including provider metadata alignment and recovery from managed backups.
 
 For normal Windows users, prefer the GUI app when it is available. Use the CLI when:
 
@@ -12,10 +12,12 @@ For normal Windows users, prefer the GUI app when it is available. Use the CLI w
 - the task is automated
 - the GUI EXE is unavailable
 
-The tool works by updating both:
+The tool primarily works by updating both:
 
 - rollout metadata under `~/.codex/sessions` and `~/.codex/archived_sessions`
 - SQLite thread metadata in `~/.codex/state_5.sqlite`
+
+The CLI may also repair missing sidebar project roots from recorded thread metadata when the current global state indicates they should still exist.
 
 Do not solve this by manually editing rollout files only unless the user explicitly asks for manual intervention.
 
@@ -23,7 +25,7 @@ Do not solve this by manually editing rollout files only unless the user explici
 
 Use this order by default:
 
-1. If the GUI is available and the user is not asking for terminal commands, open `CodexProviderSync.exe`
+1. If the GUI is available and the user is not asking for terminal commands, open `CodexThreadkeeper.exe`
 2. Refresh and inspect the current provider plus rollout/SQLite distribution
 3. Decide whether the user needs sync, switch-like behavior, or restore
 4. Execute the action
@@ -31,7 +33,7 @@ Use this order by default:
 
 CLI fallback flow:
 
-1. Run `codex-provider status`
+1. Run `codex-threadkeeper status`
 2. Read `Current provider` and compare rollout/SQLite distribution
 3. Decide whether the user needs `sync`, `switch`, or `restore`
 4. Run the command
@@ -39,7 +41,7 @@ CLI fallback flow:
 
 ## Command Selection
 
-Use `codex-provider sync` when:
+Use `codex-threadkeeper sync` when:
 
 - the user already switched auth/provider using another tool
 - the current `config.toml` root `model_provider` is already correct
@@ -48,17 +50,17 @@ Use `codex-provider sync` when:
   - "resync my Codex history"
   - "I already switched provider"
 
-Use `codex-provider switch <provider-id>` when:
+Use `codex-threadkeeper switch <provider-id>` when:
 
 - the user wants to change the root `model_provider`
 - the user wants one command to both switch provider and resync history
 
-Use `codex-provider restore <backup-dir>` when:
+Use `codex-threadkeeper restore <backup-dir>` when:
 
 - the user wants to roll back a previous sync
 - the user synced to the wrong provider
 
-Use `codex-provider status` only when:
+Use `codex-threadkeeper status` only when:
 
 - the user asks for inspection only
 - you need a safe first step before deciding what to do
@@ -89,7 +91,7 @@ GUI mapping:
 - custom providers must already exist in `config.toml`
 - the tool does not log the user in and does not manage `auth.json`
 - sync and switch create a backup first, then automatically prune older managed backups
-- backup pruning only touches backups created by this tool under `backups_state/provider-sync`
+- backup pruning only touches backups created by this tool under `backups_state/threadkeeper`
 
 ## Error Handling
 
@@ -102,12 +104,12 @@ If sync reports `Skipped locked rollout files`:
 
 - treat the sync as mostly successful
 - explain that the active session still holds one or more rollout files open
-- tell the user to rerun `codex-provider sync` after that session ends if they want a full rewrite
+- tell the user to rerun `codex-threadkeeper sync` after that session ends if they want a full rewrite
 
 If `switch <provider-id>` fails because the provider is missing:
 
 - tell the user to define it in `config.toml` or switch via their existing provider tool first
-- then run `codex-provider sync`
+- then run `codex-threadkeeper sync`
 
 ## Safe Defaults
 
@@ -116,26 +118,26 @@ If `switch <provider-id>` fails because the provider is missing:
 - by default the tool keeps the most recent 5 managed backups
 - use GUI retention settings or CLI `--keep <n>` when the user wants a different retention count
 - do not edit `state_5.sqlite` or rollout files manually if the tool can do it
-- GUI settings live in `%AppData%\codex-provider-sync\settings.json`
+- GUI settings live in `%AppData%\codex-threadkeeper\settings.json`
 
 ## Recommended Commands
 
 ```bash
-codex-provider status
-codex-provider sync
-codex-provider sync --keep 5
-codex-provider sync --provider openai
-codex-provider switch apigather
-codex-provider prune-backups --keep 5
-codex-provider restore C:\Users\you\.codex\backups_state\provider-sync\20260319T042708906Z
+codex-threadkeeper status
+codex-threadkeeper sync
+codex-threadkeeper sync --keep 5
+codex-threadkeeper sync --provider openai
+codex-threadkeeper switch apigather
+codex-threadkeeper prune-backups --keep 5
+codex-threadkeeper restore C:\Users\you\.codex\backups_state\threadkeeper\20260319T042708906Z
 ```
 
 With an explicit Codex home:
 
 ```bash
-codex-provider status --codex-home C:\Users\you\.codex
-codex-provider sync --codex-home C:\Users\you\.codex
-codex-provider switch openai --codex-home C:\Users\you\.codex
+codex-threadkeeper status --codex-home C:\Users\you\.codex
+codex-threadkeeper sync --codex-home C:\Users\you\.codex
+codex-threadkeeper switch openai --codex-home C:\Users\you\.codex
 ```
 
 ## One-Shot Prompt Template
@@ -143,12 +145,12 @@ codex-provider switch openai --codex-home C:\Users\you\.codex
 Use this prompt in another AI tool if the user wants one-step handling:
 
 ```text
-I use codex-provider-sync. Please help me fix Codex session visibility under my current provider.
+I use codex-threadkeeper. Please help me fix Codex session visibility under my current provider.
 
 Steps:
-1. Run `codex-provider status`.
-2. If my current provider is already correct, run `codex-provider sync`.
-3. If I explicitly tell you to switch provider, run `codex-provider switch <provider-id>` instead.
+1. Run `codex-threadkeeper status`.
+2. If my current provider is already correct, run `codex-threadkeeper sync`.
+3. If I explicitly tell you to switch provider, run `codex-threadkeeper switch <provider-id>` instead.
 4. If SQLite is locked, tell me to close Codex / Codex App / app-server and retry.
 5. If rollout files are skipped because they are locked, tell me which ones were skipped and remind me to rerun sync later.
 6. Summarize the final state of rollout files and SQLite after the command finishes.

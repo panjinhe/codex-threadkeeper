@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-export const WINDOWS_CMD_LAUNCHER_FILENAME = "Codex Provider Sync.cmd";
-export const WINDOWS_VBS_LAUNCHER_FILENAME = "Codex Provider Sync.vbs";
+export const WINDOWS_CMD_LAUNCHER_FILENAME = "Codex Threadkeeper.cmd";
+export const WINDOWS_VBS_LAUNCHER_FILENAME = "Codex Threadkeeper.vbs";
 
 function resolveLauncherDirectory(explicitDir) {
   return path.resolve(explicitDir ?? path.join(os.homedir(), "Desktop"));
@@ -19,7 +19,7 @@ function quoteForVbs(value) {
 
 function buildBatchScript({ codexHome }) {
   const command = [
-    "codex-provider",
+    "codex-threadkeeper",
     "sync",
     ...(codexHome ? ["--codex-home", quoteForBatch(codexHome)] : [])
   ].join(" ");
@@ -34,7 +34,7 @@ function buildBatchScript({ codexHome }) {
 
 function buildVbsScript({ codexHome }) {
   const syncCommand = [
-    "codex-provider",
+    "codex-threadkeeper",
     "sync",
     ...(codexHome ? [`--codex-home ""${quoteForVbs(codexHome)}""`] : [])
   ].join(" ");
@@ -42,7 +42,7 @@ function buildVbsScript({ codexHome }) {
   return [
     "Option Explicit",
     "",
-    'Const TITLE = "Codex Provider Sync"',
+    'Const TITLE = "Codex Threadkeeper"',
     "Const MAX_OUTPUT = 3000",
     "",
     "Function TruncateOutput(value)",

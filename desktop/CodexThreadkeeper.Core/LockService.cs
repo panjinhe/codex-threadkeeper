@@ -1,11 +1,11 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public sealed class LockService
 {
-    public async Task<LockHandle> AcquireLockAsync(string codexHome, string label = "codex-provider-sync")
+    public async Task<LockHandle> AcquireLockAsync(string codexHome, string label = "codex-threadkeeper")
     {
         string lockPath = AppConstants.LockPath(codexHome);
         Directory.CreateDirectory(Path.GetDirectoryName(lockPath)!);

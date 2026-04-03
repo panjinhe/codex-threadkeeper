@@ -1,4 +1,4 @@
-namespace CodexProviderSync.App;
+namespace CodexThreadkeeper.App;
 
 static class Program
 {

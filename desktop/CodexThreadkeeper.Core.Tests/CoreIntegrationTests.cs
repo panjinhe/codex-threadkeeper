@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace CodexProviderSync.Core.Tests;
+namespace CodexThreadkeeper.Core.Tests;
 
 public sealed class CoreIntegrationTests
 {
@@ -266,6 +266,61 @@ public sealed class CoreIntegrationTests
     }
 
     [Fact]
+    public async Task RunRestore_AcceptsExplicitLegacyProviderSyncBackupPath()
+    {
+        TestCodexHomeFixture fixture = await TestCodexHomeFixture.CreateAsync();
+        await fixture.WriteConfigAsync("model_provider = \"openai\"");
+        string sessionPath = fixture.RolloutPath("sessions", "rollout-a.jsonl");
+        await fixture.WriteRolloutAsync(sessionPath, "thread-a", "manual");
+
+        string legacyBackupDir = Path.Combine(fixture.CodexHome, "backups_state", "provider-sync", "20260319T000000000Z");
+        Directory.CreateDirectory(legacyBackupDir);
+        await File.WriteAllTextAsync(
+            Path.Combine(legacyBackupDir, "config.toml"),
+            "model_provider = \"apigather\"\n");
+        await File.WriteAllTextAsync(
+            Path.Combine(legacyBackupDir, "metadata.json"),
+            $$"""
+            {
+              "version": 1,
+              "namespace": "provider-sync",
+              "codexHome": "{{fixture.CodexHome.Replace("\\", "\\\\")}}",
+              "targetProvider": "apigather",
+              "createdAt": "2026-03-19T00:00:00.0000000+00:00",
+              "dbFiles": [],
+              "changedSessionFiles": 1
+            }
+            """);
+        await File.WriteAllTextAsync(
+            Path.Combine(legacyBackupDir, "session-meta-backup.json"),
+            $$"""
+            {
+              "version": 1,
+              "namespace": "provider-sync",
+              "codexHome": "{{fixture.CodexHome.Replace("\\", "\\\\")}}",
+              "targetProvider": "apigather",
+              "createdAt": "2026-03-19T00:00:00.0000000+00:00",
+              "files": [
+                {
+                  "path": "{{sessionPath.Replace("\\", "\\\\")}}",
+                  "originalFirstLine": "{\"timestamp\":\"2026-03-19T00:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-a\",\"timestamp\":\"2026-03-19T00:00:00.000Z\",\"cwd\":\"C:\\\\AITemp\",\"source\":\"cli\",\"cli_version\":\"0.115.0\",\"model_provider\":\"apigather\"}}",
+                  "originalSeparator": "\n"
+                }
+              ]
+            }
+            """);
+
+        CodexSyncService service = new();
+        RestoreResult result = await service.RunRestoreAsync(fixture.CodexHome, legacyBackupDir);
+
+        Assert.Equal("apigather", result.TargetProvider);
+        string configText = await File.ReadAllTextAsync(Path.Combine(fixture.CodexHome, "config.toml"));
+        string rollout = await File.ReadAllTextAsync(sessionPath);
+        Assert.Contains("model_provider = \"apigather\"", configText);
+        Assert.Contains("\"model_provider\":\"apigather\"", rollout);
+    }
+
+    [Fact]
     public async Task RunSync_SkipsRolloutFile_WhenAnotherWriterAllowsSharing()
     {
         if (!OperatingSystem.IsWindows())
@@ -331,7 +386,7 @@ public sealed class CoreIntegrationTests
             ("metadata.json", $$"""
                 {
                   "version": 1,
-                  "namespace": "provider-sync",
+                  "namespace": "threadkeeper",
                   "codexHome": "{{fixture.CodexHome.Replace("\\", "\\\\")}}",
                   "targetProvider": "openai",
                   "createdAt": "2026-03-24T00:00:00.0000000+00:00",

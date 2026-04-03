@@ -14,15 +14,15 @@ import {
 } from "./service.js";
 
 function printHelp() {
-  console.log(`codex-provider
+  console.log(`codex-threadkeeper
 
 Usage:
-  codex-provider status [--codex-home PATH]
-  codex-provider sync [--provider ID] [--keep N] [--codex-home PATH]
-  codex-provider switch <provider-id> [--keep N] [--codex-home PATH]
-  codex-provider prune-backups [--keep N] [--codex-home PATH]
-  codex-provider restore <backup-dir> [--codex-home PATH]
-  codex-provider install-windows-launcher [--dir PATH] [--codex-home PATH]
+  codex-threadkeeper status [--codex-home PATH]
+  codex-threadkeeper sync [--provider ID] [--keep N] [--codex-home PATH]
+  codex-threadkeeper switch <provider-id> [--keep N] [--codex-home PATH]
+  codex-threadkeeper prune-backups [--keep N] [--codex-home PATH]
+  codex-threadkeeper restore <backup-dir> [--codex-home PATH]
+  codex-threadkeeper install-windows-launcher [--dir PATH] [--codex-home PATH]
 `);
 }
 

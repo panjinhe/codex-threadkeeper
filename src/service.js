@@ -320,7 +320,7 @@ export async function runSwitch({
   onProgress
 }) {
   if (!provider) {
-    throw new Error("Missing provider id. Usage: codex-provider switch <provider-id>");
+    throw new Error("Missing provider id. Usage: codex-threadkeeper switch <provider-id>");
   }
 
   const codexHome = normalizeCodexHome(explicitCodexHome);
@@ -367,7 +367,7 @@ export async function runRestore({
   backupDir
 }) {
   if (!backupDir) {
-    throw new Error("Missing backup path. Usage: codex-provider restore <backup-dir>");
+    throw new Error("Missing backup path. Usage: codex-threadkeeper restore <backup-dir>");
   }
   const codexHome = normalizeCodexHome(explicitCodexHome);
   await ensureCodexHome(codexHome);

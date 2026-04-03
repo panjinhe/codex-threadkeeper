@@ -1,12 +1,12 @@
 using System;
 using System.IO;
 
-namespace CodexProviderSync.Core;
+namespace CodexThreadkeeper.Core;
 
 public static class AppConstants
 {
     public const string DefaultProvider = "openai";
-    public const string BackupNamespace = "provider-sync";
+    public const string BackupNamespace = "threadkeeper";
     public const string DbFileBasename = "state_5.sqlite";
     public const int DefaultBackupRetentionCount = 5;
     public static readonly string[] SessionDirectories = ["sessions", "archived_sessions"];
@@ -27,7 +27,7 @@ public static class AppConstants
     {
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "codex-provider-sync");
+            "codex-threadkeeper");
     }
 
     public static string SettingsPath()
@@ -37,6 +37,6 @@ public static class AppConstants
 
     public static string LockPath(string codexHome)
     {
-        return Path.Combine(codexHome, "tmp", "provider-sync.lock");
+        return Path.Combine(codexHome, "tmp", "threadkeeper.lock");
     }
 }

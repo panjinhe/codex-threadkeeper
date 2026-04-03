@@ -1,11 +1,11 @@
-namespace CodexProviderSync.Core.Tests;
+namespace CodexThreadkeeper.Core.Tests;
 
 public sealed class SettingsAndDiscoveryTests
 {
     [Fact]
     public async Task SettingsService_PersistsRecentPathsAndProviders()
     {
-        string uniqueSettingsRoot = Path.Combine(Path.GetTempPath(), $"codex-provider-settings-{Guid.NewGuid():N}");
+        string uniqueSettingsRoot = Path.Combine(Path.GetTempPath(), $"codex-threadkeeper-settings-{Guid.NewGuid():N}");
         SettingsService service = new(Path.Combine(uniqueSettingsRoot, "settings.json"));
         AppSettings settings = new()
         {
@@ -50,7 +50,7 @@ public sealed class SettingsAndDiscoveryTests
                     ["azure"] = 1
                 }
             },
-            BackupRoot = "C:\\Users\\Administrator\\.codex\\backups_state\\provider-sync",
+            BackupRoot = "C:\\Users\\Administrator\\.codex\\backups_state\\threadkeeper",
             BackupSummary = new BackupSummary
             {
                 Count = 2,
