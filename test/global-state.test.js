@@ -39,14 +39,19 @@ test("syncSidebarProjects appends only missing projects and preserves unrelated 
   await fs.writeFile(filePath, JSON.stringify({
     foo: "bar",
     "electron-saved-workspace-roots": ["E:\\Existing"],
-    "project-order": ["E:\\Existing", "E:\\Repo"],
-    "active-workspace-roots": ["E:\\Existing"]
+    "project-order": ["E:\\Existing"],
+    "active-workspace-roots": ["E:\\Existing"],
+    "thread-workspace-root-hints": {
+      alpha: "E:\\Repo",
+      beta: "E:\\Another"
+    }
   }), "utf8");
 
   const result = await syncSidebarProjects(codexHome, [
     "E:\\Repo",
     "\\\\?\\e:\\repo",
-    "E:\\Another"
+    "E:\\Another",
+    "E:\\Ghost"
   ]);
 
   assert.equal(result.addedCount, 2);
@@ -55,6 +60,6 @@ test("syncSidebarProjects appends only missing projects and preserves unrelated 
   const nextState = JSON.parse(await fs.readFile(filePath, "utf8"));
   assert.equal(nextState.foo, "bar");
   assert.deepEqual(nextState["electron-saved-workspace-roots"], ["E:\\Existing", "E:\\Another", "E:\\Repo"]);
-  assert.deepEqual(nextState["project-order"], ["E:\\Existing", "E:\\Repo", "E:\\Another"]);
+  assert.deepEqual(nextState["project-order"], ["E:\\Existing", "E:\\Another", "E:\\Repo"]);
   assert.deepEqual(nextState["active-workspace-roots"], ["E:\\Existing"]);
 });

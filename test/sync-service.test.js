@@ -204,7 +204,11 @@ test("runSync rewrites rollout files and sqlite, then restore reverts both", asy
   await writeGlobalState(codexHome, {
     "electron-saved-workspace-roots": ["E:\\Existing"],
     "project-order": ["E:\\Existing"],
-    "active-workspace-roots": ["E:\\Existing"]
+    "active-workspace-roots": ["E:\\Existing"],
+    "thread-workspace-root-hints": {
+      alpha: "E:\\Alpha",
+      beta: "E:\\Beta"
+    }
   });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   const archivedPath = path.join(codexHome, "archived_sessions", "2026", "03", "18", "rollout-b.jsonl");
@@ -256,13 +260,22 @@ test("runSync rewrites rollout files and sqlite, then restore reverts both", asy
   assert.deepEqual(restoredGlobalState, {
     "electron-saved-workspace-roots": ["E:\\Existing"],
     "project-order": ["E:\\Existing"],
-    "active-workspace-roots": ["E:\\Existing"]
+    "active-workspace-roots": ["E:\\Existing"],
+    "thread-workspace-root-hints": {
+      alpha: "E:\\Alpha",
+      beta: "E:\\Beta"
+    }
   });
 });
 
 test("runSync reports stage progress and backup duration", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\SidebarProject"
+    }
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
@@ -305,6 +318,11 @@ test("runSync reports stage progress and backup duration", async () => {
 test("runSwitch updates config and syncs provider metadata", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome);
+  await writeGlobalState(codexHome, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\SwitchSidebar"
+    }
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "openai");
   await writeStateDb(codexHome, [
@@ -359,6 +377,11 @@ test("runSwitch rejects unknown custom providers", async () => {
 test("runSync leaves rollout files and sqlite untouched when sqlite is locked", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\LockedProject"
+    }
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
@@ -402,6 +425,11 @@ test("runSync skips locked rollout files and still updates sqlite", async () => 
 
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\LockedProject"
+    }
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [
@@ -439,6 +467,11 @@ test("runSync skips locked rollout files and still updates sqlite", async () => 
 test("runSync adds missing sidebar projects even when rollout and sqlite providers are already aligned", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\MissingSidebar"
+    }
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "openai");
   await writeStateDb(codexHome, [
@@ -455,9 +488,37 @@ test("runSync adds missing sidebar projects even when rollout and sqlite provide
   assert.deepEqual(globalState["project-order"], ["E:\\MissingSidebar"]);
 });
 
+test("runSync does not resurrect projects from bare sqlite cwd history", async () => {
+  const { codexHome } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "electron-saved-workspace-roots": ["E:\\KeepMe"],
+    "project-order": ["E:\\KeepMe"]
+  });
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "openai");
+  await writeStateDb(codexHome, [
+    { id: "thread-a", model_provider: "openai", archived: false, cwd: "E:\\OldRemovedProject" }
+  ]);
+
+  const result = await runSync({ codexHome });
+  assert.equal(result.changedSessionFiles, 0);
+  assert.equal(result.sqliteRowsUpdated, 0);
+  assert.equal(result.addedSidebarProjects, 0);
+
+  const globalState = await readGlobalState(codexHome);
+  assert.deepEqual(globalState["electron-saved-workspace-roots"], ["E:\\KeepMe"]);
+  assert.deepEqual(globalState["project-order"], ["E:\\KeepMe"]);
+});
+
 test("runSync ignores worktree-only cwd entries when syncing sidebar projects", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\WorktreeOnly"
+    }
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "openai");
   await writeStateDb(codexHome, [
@@ -473,7 +534,12 @@ test("runSync ignores worktree-only cwd entries when syncing sidebar projects", 
   assert.equal(result.changedSessionFiles, 0);
   assert.equal(result.sqliteRowsUpdated, 0);
   assert.equal(result.addedSidebarProjects, 0);
-  await assert.rejects(fs.access(path.join(codexHome, ".codex-global-state.json")));
+  const globalState = await readGlobalState(codexHome);
+  assert.deepEqual(globalState, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\WorktreeOnly"
+    }
+  });
 });
 
 test("runSync fails on invalid global state json and rolls back rollout/sqlite changes", async () => {
@@ -719,6 +785,11 @@ test("cli rejects non-integer keep values", async () => {
 test("cli sync prints stage progress and backup timing", async () => {
   const { codexHome } = await makeTempCodexHome();
   await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {
+    "thread-workspace-root-hints": {
+      alpha: "E:\\CliSidebar"
+    }
+  });
   const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
   await writeRollout(sessionPath, "thread-a", "apigather");
   await writeStateDb(codexHome, [

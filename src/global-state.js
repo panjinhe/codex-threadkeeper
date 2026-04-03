@@ -86,6 +86,23 @@ export function collectSidebarProjectCandidates(workspaceRoots, codexHome) {
   return [...uniquePaths.values()].sort(compareWorkspaceRoots);
 }
 
+function collectKnownSidebarProjects(globalStateData, codexHome) {
+  if (!globalStateData || typeof globalStateData !== "object") {
+    return [];
+  }
+
+  const hintValues = globalStateData["thread-workspace-root-hints"] && typeof globalStateData["thread-workspace-root-hints"] === "object"
+    ? Object.values(globalStateData["thread-workspace-root-hints"])
+    : [];
+
+  return collectSidebarProjectCandidates([
+    ...(Array.isArray(globalStateData["electron-saved-workspace-roots"]) ? globalStateData["electron-saved-workspace-roots"] : []),
+    ...(Array.isArray(globalStateData["project-order"]) ? globalStateData["project-order"] : []),
+    ...(Array.isArray(globalStateData["active-workspace-roots"]) ? globalStateData["active-workspace-roots"] : []),
+    ...hintValues
+  ], codexHome);
+}
+
 export async function readGlobalState(codexHome) {
   const filePath = globalStatePath(codexHome);
   let text;
@@ -124,7 +141,13 @@ export async function readGlobalState(codexHome) {
 
 export async function syncSidebarProjects(codexHome, workspaceRoots) {
   const state = await readGlobalState(codexHome);
-  const normalizedCandidates = collectSidebarProjectCandidates(workspaceRoots, codexHome);
+  const knownSidebarProjects = collectKnownSidebarProjects(state.data, codexHome);
+  const sqliteProjectKeys = new Set(
+    collectSidebarProjectCandidates(workspaceRoots, codexHome)
+      .map((workspaceRoot) => workspaceRootKey(workspaceRoot))
+      .filter(Boolean)
+  );
+  const normalizedCandidates = knownSidebarProjects.filter((workspaceRoot) => sqliteProjectKeys.has(workspaceRootKey(workspaceRoot)));
 
   const workspaceRootsList = Array.isArray(state.data?.["electron-saved-workspace-roots"])
     ? [...state.data["electron-saved-workspace-roots"]]
