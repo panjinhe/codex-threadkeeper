@@ -122,7 +122,7 @@ Run `status` again after that. If rollout and SQLite provider counts now agree, 
 ### CLI
 
 ```bash
-npm install -g github:panjinhe/codex-threadkeeper
+npm install -g codex-threadkeeper
 ```
 
 Requirements:

@@ -127,7 +127,7 @@ codex-threadkeeper status
 ### CLI
 
 ```bash
-npm install -g github:panjinhe/codex-threadkeeper
+npm install -g codex-threadkeeper
 ```
 
 环境要求：
