@@ -11,7 +11,7 @@
     "src"
   ],
   "bin": {
-    "codex-threadkeeper": "./src/cli.js"
+    "codex-threadkeeper": "src/cli.js"
   },
   "scripts": {
     "test": "node --test"
