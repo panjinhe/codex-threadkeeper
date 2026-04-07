@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Text.Json;
 
 namespace CodexThreadkeeper.Core.Tests;
 
@@ -82,6 +83,133 @@ public sealed class CoreIntegrationTests
         Assert.Contains("model_provider = \"apigather\"", configText);
         string rollout = await File.ReadAllTextAsync(sessionPath);
         Assert.Contains("\"model_provider\":\"apigather\"", rollout);
+    }
+
+    [Fact]
+    public async Task RunSync_RestoresPinnedProjectsIntoGlobalState()
+    {
+        TestCodexHomeFixture fixture = await TestCodexHomeFixture.CreateAsync();
+        await fixture.WriteConfigAsync("model_provider = \"openai\"");
+        await fixture.WriteStateDbAsync(
+        [
+            ("thread-a", "apigather", false, Path.Combine(fixture.Root, "sqlite-only-project"))
+        ]);
+
+        string[] pinnedProjects =
+        [
+            Path.Combine(fixture.Root, "Playground"),
+            Path.Combine(fixture.Root, "RedNote-WebOps"),
+            Path.Combine(fixture.Root, "ahe-ai-video-workflow"),
+            Path.Combine(fixture.Root, "Skygarden"),
+            Path.Combine(fixture.Root, "minsy_mvp_frontend_v2"),
+            Path.Combine(fixture.Root, "Astock_Next"),
+            Path.Combine(fixture.Root, "codex-threadkeeper")
+        ];
+        foreach (string project in pinnedProjects)
+        {
+            Directory.CreateDirectory(project);
+        }
+
+        await fixture.WriteGlobalStateAsync(
+            savedWorkspaceRoots:
+            [
+                pinnedProjects[0],
+                pinnedProjects[1]
+            ],
+            projectOrder:
+            [
+                pinnedProjects[0],
+                pinnedProjects[1]
+            ]);
+        await fixture.WritePinnedProjectsAsync(pinnedProjects);
+
+        CodexSyncService service = new();
+        SyncResult result = await service.RunSyncAsync(fixture.CodexHome);
+
+        Assert.Equal(0, result.AddedSidebarProjects);
+        Assert.Equal(5, result.RestoredPinnedSidebarProjects);
+        Assert.Equal(0, result.SkippedMissingPinnedSidebarProjects);
+
+        using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(fixture.GlobalStatePath()));
+        string[] savedRoots = document.RootElement
+            .GetProperty("electron-saved-workspace-roots")
+            .EnumerateArray()
+            .Select(static element => element.GetString()!)
+            .ToArray();
+        string[] projectOrder = document.RootElement
+            .GetProperty("project-order")
+            .EnumerateArray()
+            .Select(static element => element.GetString()!)
+            .ToArray();
+
+        Assert.Equal(pinnedProjects, savedRoots);
+        Assert.Equal(pinnedProjects, projectOrder);
+        Assert.False(document.RootElement.TryGetProperty("active-workspace-roots", out _));
+    }
+
+    [Fact]
+    public async Task RunSync_SkipsMissingPinnedProjectsAndReportsCounts()
+    {
+        TestCodexHomeFixture fixture = await TestCodexHomeFixture.CreateAsync();
+        await fixture.WriteConfigAsync("model_provider = \"openai\"");
+        await fixture.WriteStateDbAsync(
+        [
+            ("thread-a", "apigather", false, Path.Combine(fixture.Root, "sqlite-only-project"))
+        ]);
+
+        string existingProject = Path.Combine(fixture.Root, "present-project");
+        string missingProject = Path.Combine(fixture.Root, "missing-project");
+        Directory.CreateDirectory(existingProject);
+
+        await fixture.WritePinnedProjectsAsync([existingProject, missingProject]);
+
+        CodexSyncService service = new();
+        SyncResult result = await service.RunSyncAsync(fixture.CodexHome);
+
+        Assert.Equal(1, result.RestoredPinnedSidebarProjects);
+        Assert.Equal(1, result.SkippedMissingPinnedSidebarProjects);
+
+        using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(fixture.GlobalStatePath()));
+        string[] savedRoots = document.RootElement
+            .GetProperty("electron-saved-workspace-roots")
+            .EnumerateArray()
+            .Select(static element => element.GetString()!)
+            .ToArray();
+
+        Assert.Equal([existingProject], savedRoots);
+        Assert.DoesNotContain(missingProject, savedRoots);
+    }
+
+    [Fact]
+    public async Task RunSwitch_RestoresPinnedProjectsAfterProviderSwitch()
+    {
+        TestCodexHomeFixture fixture = await TestCodexHomeFixture.CreateAsync();
+        await fixture.WriteConfigAsync(string.Empty);
+        string sessionPath = fixture.RolloutPath("sessions", "rollout-a.jsonl");
+        await fixture.WriteRolloutAsync(sessionPath, "thread-a", "openai");
+
+        string pinnedProject = Path.Combine(fixture.Root, "switch-pinned-project");
+        Directory.CreateDirectory(pinnedProject);
+        await fixture.WritePinnedProjectsAsync([pinnedProject]);
+        await fixture.WriteStateDbAsync(
+        [
+            ("thread-a", "openai", false, Path.Combine(fixture.Root, "sqlite-only-project"))
+        ]);
+
+        CodexSyncService service = new();
+        SyncResult result = await service.RunSwitchAsync(fixture.CodexHome, "apigather");
+
+        Assert.True(result.ConfigUpdated);
+        Assert.Equal("apigather", result.TargetProvider);
+        Assert.Equal(1, result.RestoredPinnedSidebarProjects);
+
+        using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(fixture.GlobalStatePath()));
+        string[] savedRoots = document.RootElement
+            .GetProperty("electron-saved-workspace-roots")
+            .EnumerateArray()
+            .Select(static element => element.GetString()!)
+            .ToArray();
+        Assert.Equal([pinnedProject], savedRoots);
     }
 
     [Fact]
@@ -266,6 +394,45 @@ public sealed class CoreIntegrationTests
     }
 
     [Fact]
+    public async Task RunRestore_RestoresBackedUpGlobalStateAfterSync()
+    {
+        TestCodexHomeFixture fixture = await TestCodexHomeFixture.CreateAsync();
+        await fixture.WriteConfigAsync("model_provider = \"openai\"");
+        string originalProject = Path.Combine(fixture.Root, "original-project");
+        await fixture.WriteGlobalStateAsync(
+            savedWorkspaceRoots:
+            [
+                originalProject
+            ],
+            projectOrder:
+            [
+                originalProject
+            ]);
+
+        string pinnedProject = Path.Combine(fixture.Root, "restored-pinned-project");
+        Directory.CreateDirectory(pinnedProject);
+        await fixture.WritePinnedProjectsAsync([pinnedProject]);
+        await fixture.WriteStateDbAsync(
+        [
+            ("thread-a", "apigather", false, Path.Combine(fixture.Root, "sqlite-only-project"))
+        ]);
+
+        string originalGlobalStateText = await File.ReadAllTextAsync(fixture.GlobalStatePath());
+
+        CodexSyncService service = new();
+        SyncResult syncResult = await service.RunSyncAsync(fixture.CodexHome);
+        Assert.Equal(1, syncResult.RestoredPinnedSidebarProjects);
+
+        await fixture.WriteGlobalStateTextAsync("{\"electron-saved-workspace-roots\":[\"C:\\\\manual\"],\"project-order\":[\"C:\\\\manual\"]}");
+
+        RestoreResult restoreResult = await service.RunRestoreAsync(fixture.CodexHome, syncResult.BackupDir);
+
+        Assert.Equal("openai", restoreResult.TargetProvider);
+        string restoredGlobalStateText = await File.ReadAllTextAsync(fixture.GlobalStatePath());
+        Assert.Equal(originalGlobalStateText, restoredGlobalStateText);
+    }
+
+    [Fact]
     public async Task RunRestore_AcceptsExplicitLegacyProviderSyncBackupPath()
     {
         TestCodexHomeFixture fixture = await TestCodexHomeFixture.CreateAsync();
@@ -291,6 +458,20 @@ public sealed class CoreIntegrationTests
               "changedSessionFiles": 1
             }
             """);
+        string legacyOriginalFirstLine = JsonSerializer.Serialize(new
+        {
+            timestamp = "2026-03-19T00:00:00.000Z",
+            type = "session_meta",
+            payload = new
+            {
+                id = "thread-a",
+                timestamp = "2026-03-19T00:00:00.000Z",
+                cwd = "C:\\AITemp",
+                source = "cli",
+                cli_version = "0.115.0",
+                model_provider = "apigather"
+            }
+        });
         await File.WriteAllTextAsync(
             Path.Combine(legacyBackupDir, "session-meta-backup.json"),
             $$"""
@@ -303,7 +484,7 @@ public sealed class CoreIntegrationTests
               "files": [
                 {
                   "path": "{{sessionPath.Replace("\\", "\\\\")}}",
-                  "originalFirstLine": "{\"timestamp\":\"2026-03-19T00:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-a\",\"timestamp\":\"2026-03-19T00:00:00.000Z\",\"cwd\":\"C:\\\\AITemp\",\"source\":\"cli\",\"cli_version\":\"0.115.0\",\"model_provider\":\"apigather\"}}",
+                  "originalFirstLine": {{JsonSerializer.Serialize(legacyOriginalFirstLine)}},
                   "originalSeparator": "\n"
                 }
               ]
@@ -347,6 +528,29 @@ public sealed class CoreIntegrationTests
         Assert.Equal(0, result.ChangedSessionFiles);
         Assert.Equal(1, result.SqliteRowsUpdated);
         Assert.Equal([sessionPath], result.SkippedLockedRolloutFiles);
+
+        string rollout = await File.ReadAllTextAsync(sessionPath);
+        Assert.Contains("\"model_provider\":\"apigather\"", rollout);
+    }
+
+    [Fact]
+    public async Task RunSync_FailsClearlyWhenPinnedProjectFileIsInvalid()
+    {
+        TestCodexHomeFixture fixture = await TestCodexHomeFixture.CreateAsync();
+        await fixture.WriteConfigAsync("model_provider = \"openai\"");
+        string sessionPath = fixture.RolloutPath("sessions", "rollout-a.jsonl");
+        await fixture.WriteRolloutAsync(sessionPath, "thread-a", "apigather");
+        await fixture.WriteStateDbAsync(
+        [
+            ("thread-a", "apigather", false, Path.Combine(fixture.Root, "sqlite-only-project"))
+        ]);
+        await fixture.WritePinnedProjectsTextAsync("{not valid json");
+
+        CodexSyncService service = new();
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.RunSyncAsync(fixture.CodexHome));
+
+        Assert.Contains("Invalid threadkeeper-sidebar-projects.json", error.Message);
 
         string rollout = await File.ReadAllTextAsync(sessionPath);
         Assert.Contains("\"model_provider\":\"apigather\"", rollout);
@@ -465,5 +669,31 @@ public sealed class CoreIntegrationTests
         Assert.NotNull(result.AutoPruneResult);
         Assert.Equal(3, result.AutoPruneResult!.DeletedCount);
         Assert.Equal(2, result.AutoPruneResult.RemainingCount);
+    }
+
+    [Fact]
+    public void FormatSyncResult_IncludesPinnedSidebarCounts()
+    {
+        string text = TextFormatter.FormatSyncResult(
+            new SyncResult
+            {
+                CodexHome = @"C:\Users\Administrator\.codex",
+                TargetProvider = "openai",
+                PreviousProvider = "now_coding",
+                BackupDir = @"C:\Users\Administrator\.codex\backups_state\threadkeeper\20260408T000000000Z",
+                ChangedSessionFiles = 10,
+                AddedSidebarProjects = 2,
+                RestoredPinnedSidebarProjects = 7,
+                SkippedMissingPinnedSidebarProjects = 1,
+                SkippedLockedRolloutFiles = [],
+                SqliteRowsUpdated = 10,
+                SqlitePresent = true,
+                RolloutCountsBefore = new ProviderCounts()
+            },
+            "Synchronized");
+
+        Assert.Contains("Added sidebar projects: 2", text);
+        Assert.Contains("Restored pinned sidebar projects: 7", text);
+        Assert.Contains("Skipped missing pinned sidebar projects: 1", text);
     }
 }

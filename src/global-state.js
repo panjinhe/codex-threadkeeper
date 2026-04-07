@@ -86,6 +86,33 @@ export function collectSidebarProjectCandidates(workspaceRoots, codexHome) {
   return [...uniquePaths.values()].sort(compareWorkspaceRoots);
 }
 
+function collectPinnedSidebarProjects(workspaceRoots, codexHome) {
+  const normalizedCodexHome = normalizeWorkspaceRootPath(codexHome);
+  const codexHomeKey = workspaceRootKey(normalizedCodexHome);
+  const uniquePaths = new Map();
+
+  for (const workspaceRoot of workspaceRoots ?? []) {
+    const normalized = normalizeWorkspaceRootPath(workspaceRoot);
+    if (!normalized) {
+      continue;
+    }
+
+    const key = workspaceRootKey(normalized);
+    if (!key || key === codexHomeKey) {
+      continue;
+    }
+    if (isCodexWorktreePath(key, codexHomeKey)) {
+      continue;
+    }
+
+    if (!uniquePaths.has(key)) {
+      uniquePaths.set(key, normalized);
+    }
+  }
+
+  return [...uniquePaths.values()];
+}
+
 function collectKnownSidebarProjects(globalStateData, codexHome) {
   if (!globalStateData || typeof globalStateData !== "object") {
     return [];
@@ -140,6 +167,10 @@ export async function readGlobalState(codexHome) {
 }
 
 export async function syncSidebarProjects(codexHome, workspaceRoots) {
+  return syncSidebarProjectsWithPinned(codexHome, workspaceRoots, []);
+}
+
+export async function syncSidebarProjectsWithPinned(codexHome, workspaceRoots, pinnedProjects = []) {
   const state = await readGlobalState(codexHome);
   const knownSidebarProjects = collectKnownSidebarProjects(state.data, codexHome);
   const sqliteProjectKeys = new Set(
@@ -148,6 +179,7 @@ export async function syncSidebarProjects(codexHome, workspaceRoots) {
       .filter(Boolean)
   );
   const normalizedCandidates = knownSidebarProjects.filter((workspaceRoot) => sqliteProjectKeys.has(workspaceRootKey(workspaceRoot)));
+  const normalizedPinnedProjects = collectPinnedSidebarProjects(pinnedProjects, codexHome);
 
   const workspaceRootsList = Array.isArray(state.data?.["electron-saved-workspace-roots"])
     ? [...state.data["electron-saved-workspace-roots"]]
@@ -173,17 +205,8 @@ export async function syncSidebarProjects(codexHome, workspaceRoots) {
     const key = workspaceRootKey(workspaceRoot);
     return key && (!workspaceRootKeys.has(key) || !projectOrderKeys.has(key));
   });
-
-  if (addedProjects.length === 0) {
-    return {
-      filePath: state.filePath,
-      existed: state.exists,
-      originalText: state.text,
-      modified: false,
-      addedProjects: [],
-      addedCount: 0
-    };
-  }
+  const skippedPinnedProjects = [];
+  const pinnedAddedProjects = [];
 
   for (const workspaceRoot of addedProjects) {
     const key = workspaceRootKey(workspaceRoot);
@@ -197,6 +220,48 @@ export async function syncSidebarProjects(codexHome, workspaceRoots) {
     }
   }
 
+  for (const workspaceRoot of normalizedPinnedProjects) {
+    try {
+      await fs.access(workspaceRoot);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        skippedPinnedProjects.push(workspaceRoot);
+        continue;
+      }
+      throw error;
+    }
+
+    const key = workspaceRootKey(workspaceRoot);
+    if (!key || (workspaceRootKeys.has(key) && projectOrderKeys.has(key))) {
+      continue;
+    }
+
+    if (!workspaceRootKeys.has(key)) {
+      workspaceRootsList.push(workspaceRoot);
+      workspaceRootKeys.add(key);
+    }
+    if (!projectOrderKeys.has(key)) {
+      projectOrderList.push(workspaceRoot);
+      projectOrderKeys.add(key);
+    }
+    pinnedAddedProjects.push(workspaceRoot);
+  }
+
+  if (addedProjects.length === 0 && pinnedAddedProjects.length === 0) {
+    return {
+      filePath: state.filePath,
+      existed: state.exists,
+      originalText: state.text,
+      modified: false,
+      addedProjects: [],
+      addedCount: 0,
+      pinnedAddedProjects: [],
+      pinnedAddedCount: 0,
+      skippedPinnedProjects,
+      skippedPinnedCount: skippedPinnedProjects.length
+    };
+  }
+
   const nextState = state.exists ? { ...state.data } : {};
   nextState["electron-saved-workspace-roots"] = workspaceRootsList;
   nextState["project-order"] = projectOrderList;
@@ -208,7 +273,11 @@ export async function syncSidebarProjects(codexHome, workspaceRoots) {
     originalText: state.text,
     modified: true,
     addedProjects,
-    addedCount: addedProjects.length
+    addedCount: addedProjects.length,
+    pinnedAddedProjects,
+    pinnedAddedCount: pinnedAddedProjects.length,
+    skippedPinnedProjects,
+    skippedPinnedCount: skippedPinnedProjects.length
   };
 }
 

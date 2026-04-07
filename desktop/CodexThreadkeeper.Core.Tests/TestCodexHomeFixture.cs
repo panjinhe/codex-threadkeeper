@@ -34,6 +34,16 @@ internal sealed class TestCodexHomeFixture
         return Path.Combine(CodexHome, "backups_state", AppConstants.BackupNamespace);
     }
 
+    public string GlobalStatePath()
+    {
+        return Path.Combine(CodexHome, AppConstants.GlobalStateFileBasename);
+    }
+
+    public string PinnedProjectsPath()
+    {
+        return Path.Combine(CodexHome, AppConstants.PinnedSidebarProjectsFileBasename);
+    }
+
     public string BackupPath(string directoryName)
     {
         return Path.Combine(BackupRoot(), directoryName);
@@ -112,7 +122,63 @@ internal sealed class TestCodexHomeFixture
         return totalBytes;
     }
 
+    public async Task WriteGlobalStateAsync(
+        IEnumerable<string>? savedWorkspaceRoots = null,
+        IEnumerable<string>? projectOrder = null,
+        IEnumerable<string>? activeWorkspaceRoots = null,
+        IReadOnlyDictionary<string, string>? workspaceRootHints = null)
+    {
+        Dictionary<string, object?> state = [];
+        if (savedWorkspaceRoots is not null)
+        {
+            state["electron-saved-workspace-roots"] = savedWorkspaceRoots.ToArray();
+        }
+
+        if (projectOrder is not null)
+        {
+            state["project-order"] = projectOrder.ToArray();
+        }
+
+        if (activeWorkspaceRoots is not null)
+        {
+            state["active-workspace-roots"] = activeWorkspaceRoots.ToArray();
+        }
+
+        if (workspaceRootHints is not null)
+        {
+            state["thread-workspace-root-hints"] = workspaceRootHints;
+        }
+
+        await File.WriteAllTextAsync(GlobalStatePath(), JsonSerializer.Serialize(state));
+    }
+
+    public async Task WriteGlobalStateTextAsync(string content)
+    {
+        await File.WriteAllTextAsync(GlobalStatePath(), content);
+    }
+
+    public async Task WritePinnedProjectsAsync(IEnumerable<string> projects)
+    {
+        await File.WriteAllTextAsync(
+            PinnedProjectsPath(),
+            JsonSerializer.Serialize(new
+            {
+                version = 1,
+                projects = projects.ToArray()
+            }));
+    }
+
+    public async Task WritePinnedProjectsTextAsync(string content)
+    {
+        await File.WriteAllTextAsync(PinnedProjectsPath(), content);
+    }
+
     public async Task WriteStateDbAsync(IEnumerable<(string Id, string ModelProvider, bool Archived)> rows)
+    {
+        await WriteStateDbAsync(rows.Select(static row => (row.Id, row.ModelProvider, row.Archived, (string?)null)));
+    }
+
+    public async Task WriteStateDbAsync(IEnumerable<(string Id, string ModelProvider, bool Archived, string? Cwd)> rows)
     {
         string dbPath = Path.Combine(CodexHome, "state_5.sqlite");
         await using SqliteConnection connection = OpenSqliteConnection();
@@ -123,21 +189,23 @@ internal sealed class TestCodexHomeFixture
               id TEXT PRIMARY KEY,
               model_provider TEXT,
               archived INTEGER NOT NULL DEFAULT 0,
-              first_user_message TEXT NOT NULL DEFAULT ''
+              first_user_message TEXT NOT NULL DEFAULT '',
+              cwd TEXT
             )
             """;
         await create.ExecuteNonQueryAsync();
 
-        foreach ((string id, string modelProvider, bool archived) in rows)
+        foreach ((string id, string modelProvider, bool archived, string? cwd) in rows)
         {
             SqliteCommand insert = connection.CreateCommand();
             insert.CommandText = """
-                INSERT INTO threads (id, model_provider, archived, first_user_message)
-                VALUES ($id, $provider, $archived, 'hello')
+                INSERT INTO threads (id, model_provider, archived, first_user_message, cwd)
+                VALUES ($id, $provider, $archived, 'hello', $cwd)
                 """;
             insert.Parameters.AddWithValue("$id", id);
             insert.Parameters.AddWithValue("$provider", modelProvider);
             insert.Parameters.AddWithValue("$archived", archived ? 1 : 0);
+            insert.Parameters.AddWithValue("$cwd", (object?)cwd ?? DBNull.Value);
             await insert.ExecuteNonQueryAsync();
         }
     }

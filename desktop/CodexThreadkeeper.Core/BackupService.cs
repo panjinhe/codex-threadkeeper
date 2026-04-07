@@ -45,6 +45,11 @@ public sealed class BackupService
             await CopyIfPresentAsync(configPath, configBackupPath, overwrite: false);
         }
 
+        bool globalStateIncluded = await CopyIfPresentAsync(
+            AppConstants.GlobalStatePath(codexHome),
+            Path.Combine(backupDir, AppConstants.GlobalStateFileBasename),
+            overwrite: false);
+
         DateTimeOffset createdAt = DateTimeOffset.UtcNow;
         SessionBackupManifest sessionManifest = new()
         {
@@ -72,7 +77,8 @@ public sealed class BackupService
             TargetProvider = targetProvider,
             CreatedAt = createdAt,
             DbFiles = copiedDbFiles,
-            ChangedSessionFiles = sessionChanges.Count
+            ChangedSessionFiles = sessionChanges.Count,
+            GlobalStateIncluded = globalStateIncluded
         };
         await File.WriteAllTextAsync(
             Path.Combine(backupDir, "metadata.json"),
@@ -114,6 +120,22 @@ public sealed class BackupService
                 Path.Combine(normalizedBackupDir, "config.toml"),
                 Path.Combine(codexHome, "config.toml"),
                 overwrite: true);
+        }
+
+        if (options.RestoreGlobalState && metadata.GlobalStateIncluded.HasValue)
+        {
+            string targetGlobalStatePath = AppConstants.GlobalStatePath(codexHome);
+            if (metadata.GlobalStateIncluded.Value)
+            {
+                await CopyIfPresentAsync(
+                    Path.Combine(normalizedBackupDir, AppConstants.GlobalStateFileBasename),
+                    targetGlobalStatePath,
+                    overwrite: true);
+            }
+            else if (File.Exists(targetGlobalStatePath))
+            {
+                File.Delete(targetGlobalStatePath);
+            }
         }
 
         if (options.RestoreDatabase)
@@ -188,7 +210,8 @@ public sealed class BackupService
             TargetProvider = metadata.TargetProvider,
             CreatedAt = metadata.CreatedAt,
             DbFiles = metadata.DbFiles,
-            ChangedSessionFiles = sessionChanges.Count
+            ChangedSessionFiles = sessionChanges.Count,
+            GlobalStateIncluded = metadata.GlobalStateIncluded
         };
 
         await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(sessionManifest, JsonOptions()));

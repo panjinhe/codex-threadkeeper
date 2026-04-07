@@ -63,6 +63,9 @@ public sealed class SyncResult
     public required string PreviousProvider { get; init; }
     public required string BackupDir { get; init; }
     public required int ChangedSessionFiles { get; init; }
+    public int AddedSidebarProjects { get; init; }
+    public int RestoredPinnedSidebarProjects { get; init; }
+    public int SkippedMissingPinnedSidebarProjects { get; init; }
     public required IReadOnlyList<string> SkippedLockedRolloutFiles { get; init; }
     public required int SqliteRowsUpdated { get; init; }
     public required bool SqlitePresent { get; init; }
@@ -131,6 +134,7 @@ public sealed class RestoreBackupOptions
     public bool RestoreConfig { get; init; } = true;
     public bool RestoreDatabase { get; init; } = true;
     public bool RestoreSessions { get; init; } = true;
+    public bool RestoreGlobalState { get; init; } = true;
 }
 
 internal sealed class BackupMetadataFile
@@ -142,6 +146,7 @@ internal sealed class BackupMetadataFile
     public required DateTimeOffset CreatedAt { get; init; }
     public required List<string> DbFiles { get; init; }
     public int ChangedSessionFiles { get; init; }
+    public bool? GlobalStateIncluded { get; init; }
 }
 
 internal sealed class SessionBackupManifest

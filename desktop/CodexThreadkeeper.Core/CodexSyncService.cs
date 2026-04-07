@@ -6,6 +6,8 @@ public sealed class CodexSyncService
     private readonly ConfigFileService _configFileService;
     private readonly SessionRolloutService _sessionRolloutService;
     private readonly SqliteStateService _sqliteStateService;
+    private readonly GlobalStateService _globalStateService;
+    private readonly PinnedSidebarProjectsService _pinnedSidebarProjectsService;
     private readonly BackupService _backupService;
     private readonly LockService _lockService;
     private readonly ProviderDiscoveryService _providerDiscoveryService;
@@ -33,6 +35,8 @@ public sealed class CodexSyncService
         _configFileService = configFileService;
         _sessionRolloutService = sessionRolloutService;
         _sqliteStateService = sqliteStateService;
+        _globalStateService = new GlobalStateService();
+        _pinnedSidebarProjectsService = new PinnedSidebarProjectsService();
         _lockService = lockService;
         _providerDiscoveryService = providerDiscoveryService;
         _backupService = new BackupService(sessionRolloutService, sqliteStateService);
@@ -100,27 +104,35 @@ public sealed class CodexSyncService
 
         await _sqliteStateService.AssertSqliteWritableAsync(codexHome, sqliteBusyTimeoutMs);
         string backupDir = await _backupService.CreateBackupAsync(codexHome, targetProvider, writableChanges, configPath, configBackupText);
+        IReadOnlyList<string> sqliteProjectPaths = await _sqliteStateService.ReadSqliteProjectPathsAsync(codexHome);
+        IReadOnlyList<string> pinnedProjects = await _pinnedSidebarProjectsService.LoadPinnedProjectsAsync(codexHome);
 
         bool sessionRestoreNeeded = false;
         List<SessionChange> appliedSessionChanges = [];
+        GlobalStateService.SidebarSyncResult? globalStateRestoreSnapshot = null;
         try
         {
             SessionApplyResult? applyResult = null;
+            GlobalStateService.SidebarSyncResult? sidebarSyncResult = null;
             (int updatedRows, bool databasePresent) = await _sqliteStateService.UpdateSqliteProviderAsync(
                 codexHome,
                 targetProvider,
                 async _ =>
                 {
-                    if (writableChanges.Count == 0)
+                    if (writableChanges.Count > 0)
                     {
-                        return;
+                        applyResult = await _sessionRolloutService.ApplySessionChangesAsync(writableChanges);
+                        HashSet<string> appliedPathSet = new(applyResult.AppliedPaths, StringComparer.Ordinal);
+                        appliedSessionChanges = writableChanges.Where(change => appliedPathSet.Contains(change.Path)).ToList();
+                        sessionRestoreNeeded = appliedSessionChanges.Count > 0;
+                        await _backupService.UpdateSessionBackupManifestAsync(backupDir, appliedSessionChanges);
                     }
 
-                    applyResult = await _sessionRolloutService.ApplySessionChangesAsync(writableChanges);
-                    HashSet<string> appliedPathSet = new(applyResult.AppliedPaths, StringComparer.Ordinal);
-                    appliedSessionChanges = writableChanges.Where(change => appliedPathSet.Contains(change.Path)).ToList();
-                    sessionRestoreNeeded = appliedSessionChanges.Count > 0;
-                    await _backupService.UpdateSessionBackupManifestAsync(backupDir, appliedSessionChanges);
+                    sidebarSyncResult = await _globalStateService.SyncSidebarProjectsAsync(codexHome, sqliteProjectPaths, pinnedProjects);
+                    if (sidebarSyncResult.Modified)
+                    {
+                        globalStateRestoreSnapshot = sidebarSyncResult;
+                    }
                 },
                 sqliteBusyTimeoutMs);
 
@@ -145,6 +157,9 @@ public sealed class CodexSyncService
                 PreviousProvider = current.Provider ?? AppConstants.DefaultProvider,
                 BackupDir = backupDir,
                 ChangedSessionFiles = applyResult?.AppliedCount ?? 0,
+                AddedSidebarProjects = sidebarSyncResult?.AddedCount ?? 0,
+                RestoredPinnedSidebarProjects = sidebarSyncResult?.PinnedAddedCount ?? 0,
+                SkippedMissingPinnedSidebarProjects = sidebarSyncResult?.SkippedPinnedCount ?? 0,
                 SkippedLockedRolloutFiles = skippedRolloutFiles,
                 SqliteRowsUpdated = updatedRows,
                 SqlitePresent = databasePresent,
@@ -153,11 +168,38 @@ public sealed class CodexSyncService
                 AutoPruneWarning = autoPruneWarning
             };
         }
-        catch
+        catch (Exception error)
         {
+            List<string> restoreFailures = [];
+            if (globalStateRestoreSnapshot?.Modified == true)
+            {
+                try
+                {
+                    await _globalStateService.RestoreGlobalStateSnapshotAsync(globalStateRestoreSnapshot);
+                }
+                catch (Exception restoreError)
+                {
+                    restoreFailures.Add($"Global state restore error: {restoreError.Message}");
+                }
+            }
+
             if (sessionRestoreNeeded)
             {
-                await _sessionRolloutService.RestoreSessionChangesAsync(appliedSessionChanges);
+                try
+                {
+                    await _sessionRolloutService.RestoreSessionChangesAsync(appliedSessionChanges);
+                }
+                catch (Exception restoreError)
+                {
+                    restoreFailures.Add($"Rollout restore error: {restoreError.Message}");
+                }
+            }
+
+            if (restoreFailures.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to restore sync side effects after error. Original error: {error.Message}. {string.Join(" ", restoreFailures)}",
+                    error);
             }
 
             throw;
@@ -198,6 +240,9 @@ public sealed class CodexSyncService
                 PreviousProvider = result.PreviousProvider,
                 BackupDir = result.BackupDir,
                 ChangedSessionFiles = result.ChangedSessionFiles,
+                AddedSidebarProjects = result.AddedSidebarProjects,
+                RestoredPinnedSidebarProjects = result.RestoredPinnedSidebarProjects,
+                SkippedMissingPinnedSidebarProjects = result.SkippedMissingPinnedSidebarProjects,
                 SkippedLockedRolloutFiles = result.SkippedLockedRolloutFiles,
                 SqliteRowsUpdated = result.SqliteRowsUpdated,
                 SqlitePresent = result.SqlitePresent,

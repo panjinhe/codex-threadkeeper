@@ -6,6 +6,7 @@ export const DEFAULT_LOCK_NAME = "threadkeeper.lock";
 export const BACKUP_NAMESPACE = "threadkeeper";
 export const DB_FILE_BASENAME = "state_5.sqlite";
 export const GLOBAL_STATE_FILE_BASENAME = ".codex-global-state.json";
+export const PINNED_SIDEBAR_PROJECTS_FILE_BASENAME = "threadkeeper-sidebar-projects.json";
 export const DEFAULT_BACKUP_RETENTION_COUNT = 5;
 export const SESSION_DIRS = ["sessions", "archived_sessions"];
 
@@ -15,4 +16,8 @@ export function defaultCodexHome() {
 
 export function defaultBackupRoot(codexHome) {
   return path.join(codexHome, "backups_state", BACKUP_NAMESPACE);
+}
+
+export function pinnedSidebarProjectsPath(codexHome) {
+  return path.join(codexHome, PINNED_SIDEBAR_PROJECTS_FILE_BASENAME);
 }

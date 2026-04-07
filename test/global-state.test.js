@@ -7,7 +7,8 @@ import path from "node:path";
 import {
   collectSidebarProjectCandidates,
   normalizeWorkspaceRootPath,
-  syncSidebarProjects
+  syncSidebarProjects,
+  syncSidebarProjectsWithPinned
 } from "../src/global-state.js";
 
 test("normalizeWorkspaceRootPath strips extended prefixes and normalizes drive roots", () => {
@@ -62,4 +63,42 @@ test("syncSidebarProjects appends only missing projects and preserves unrelated 
   assert.deepEqual(nextState["electron-saved-workspace-roots"], ["E:\\Existing", "E:\\Another", "E:\\Repo"]);
   assert.deepEqual(nextState["project-order"], ["E:\\Existing", "E:\\Another", "E:\\Repo"]);
   assert.deepEqual(nextState["active-workspace-roots"], ["E:\\Existing"]);
+});
+
+test("syncSidebarProjectsWithPinned force-restores pinned projects in pinned order", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-threadkeeper-global-state-pinned-"));
+  const codexHome = path.join(root, ".codex");
+  await fs.mkdir(codexHome, { recursive: true });
+  const filePath = path.join(codexHome, ".codex-global-state.json");
+  const pinnedTwo = path.join(root, "PinnedTwo");
+  const pinnedOne = path.join(root, "PinnedOne");
+  const missingPinned = path.join(root, "MissingPinned");
+  await fs.writeFile(filePath, JSON.stringify({
+    "electron-saved-workspace-roots": ["E:\\Existing"],
+    "project-order": ["E:\\Existing"]
+  }), "utf8");
+
+  await fs.mkdir(pinnedOne, { recursive: true });
+  await fs.mkdir(pinnedTwo, { recursive: true });
+
+  const result = await syncSidebarProjectsWithPinned(
+    codexHome,
+    [],
+    [pinnedTwo, pinnedOne, missingPinned]
+  );
+
+  assert.equal(result.addedCount, 0);
+  assert.equal(result.pinnedAddedCount, 2);
+  assert.deepEqual(result.pinnedAddedProjects, [pinnedTwo, pinnedOne]);
+  assert.deepEqual(result.skippedPinnedProjects, [missingPinned]);
+
+  const nextState = JSON.parse(await fs.readFile(filePath, "utf8"));
+  assert.deepEqual(
+    nextState["electron-saved-workspace-roots"],
+    ["E:\\Existing", pinnedTwo, pinnedOne]
+  );
+  assert.deepEqual(
+    nextState["project-order"],
+    ["E:\\Existing", pinnedTwo, pinnedOne]
+  );
 });

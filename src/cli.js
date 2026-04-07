@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { DEFAULT_BACKUP_RETENTION_COUNT } from "./constants.js";
 import { installWindowsLauncher } from "./launcher.js";
+import { pinProject, readPinnedProjects, unpinProject } from "./pinned-projects.js";
 import {
   getStatus,
   renderStatus,
@@ -22,6 +23,9 @@ Usage:
   codex-threadkeeper switch <provider-id> [--keep N] [--codex-home PATH]
   codex-threadkeeper prune-backups [--keep N] [--codex-home PATH]
   codex-threadkeeper restore <backup-dir> [--codex-home PATH]
+  codex-threadkeeper list-pinned-projects [--codex-home PATH]
+  codex-threadkeeper pin-project <path> [--codex-home PATH]
+  codex-threadkeeper unpin-project <path> [--codex-home PATH]
   codex-threadkeeper install-windows-launcher [--dir PATH] [--codex-home PATH]
 `);
 }
@@ -62,6 +66,8 @@ function summarizeSync(result, label) {
     `Backup creation time: ${formatDuration(result.backupDurationMs ?? 0)}`,
     `Updated rollout files: ${result.changedSessionFiles}`,
     `Added sidebar projects: ${result.addedSidebarProjects ?? 0}`,
+    `Restored pinned sidebar projects: ${result.restoredPinnedSidebarProjects ?? 0}`,
+    `Skipped missing pinned sidebar projects: ${result.skippedMissingPinnedSidebarProjects ?? 0}`,
     `Updated SQLite rows: ${result.sqliteRowsUpdated}${result.sqlitePresent ? "" : " (state_5.sqlite not found)"}`
   ];
   if (result.skippedLockedRolloutFiles?.length) {
@@ -222,6 +228,35 @@ async function main() {
     console.log(`Restored backup from ${path.resolve(backupDir)}`);
     console.log(`Codex home: ${result.codexHome}`);
     console.log(`Provider at backup time: ${result.targetProvider}`);
+    return;
+  }
+
+  if (command === "list-pinned-projects") {
+    const result = await readPinnedProjects(flags["codex-home"]);
+    console.log(`Pinned projects: ${result.projects.length}`);
+    if (result.projects.length === 0) {
+      console.log("(none)");
+    } else {
+      for (const project of result.projects) {
+        console.log(project);
+      }
+    }
+    return;
+  }
+
+  if (command === "pin-project") {
+    const projectPath = positionals[1] ?? flags.path;
+    const result = await pinProject(flags["codex-home"], projectPath);
+    console.log(`${result.added ? "Pinned" : "Already pinned"}: ${result.project}`);
+    console.log(`Pinned projects: ${result.projects.length}`);
+    return;
+  }
+
+  if (command === "unpin-project") {
+    const projectPath = positionals[1] ?? flags.path;
+    const result = await unpinProject(flags["codex-home"], projectPath);
+    console.log(`${result.removed ? "Unpinned" : "Not pinned"}: ${result.project}`);
+    console.log(`Pinned projects: ${result.projects.length}`);
     return;
   }
 

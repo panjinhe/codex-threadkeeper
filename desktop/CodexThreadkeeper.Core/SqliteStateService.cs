@@ -59,6 +59,41 @@ public sealed class SqliteStateService
         };
     }
 
+    public async Task<IReadOnlyList<string>> ReadSqliteProjectPathsAsync(string codexHome)
+    {
+        string dbPath = StateDbPath(codexHome);
+        if (!File.Exists(dbPath))
+        {
+            return [];
+        }
+
+        await using SqliteConnection connection = OpenConnection(dbPath);
+        await connection.OpenAsync();
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT DISTINCT cwd
+            FROM threads
+            WHERE TRIM(COALESCE(cwd, '')) <> ''
+            ORDER BY LOWER(cwd), cwd
+            """;
+
+        try
+        {
+            List<string> projectPaths = [];
+            await using SqliteDataReader reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                projectPaths.Add(reader.GetString(0));
+            }
+
+            return projectPaths;
+        }
+        catch (SqliteException error) when (IsMissingColumn(error, "cwd"))
+        {
+            return [];
+        }
+    }
+
     public async Task<bool> AssertSqliteWritableAsync(string codexHome, int? busyTimeoutMs = null)
     {
         string dbPath = StateDbPath(codexHome);
@@ -179,5 +214,10 @@ public sealed class SqliteStateService
         return new InvalidOperationException(
             $"Unable to {action} because state_5.sqlite is currently in use. Close Codex and the Codex app, then retry. Original error: {sqliteError.Message}",
             sqliteError);
+    }
+
+    private static bool IsMissingColumn(SqliteException error, string columnName)
+    {
+        return error.Message.Contains($"no such column: {columnName}", StringComparison.OrdinalIgnoreCase);
     }
 }

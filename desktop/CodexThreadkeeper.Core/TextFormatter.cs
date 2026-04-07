@@ -43,6 +43,9 @@ public static class TextFormatter
             $"Codex home: {result.CodexHome}",
             $"Backup: {result.BackupDir}",
             $"Updated rollout files: {result.ChangedSessionFiles}",
+            $"Added sidebar projects: {result.AddedSidebarProjects}",
+            $"Restored pinned sidebar projects: {result.RestoredPinnedSidebarProjects}",
+            $"Skipped missing pinned sidebar projects: {result.SkippedMissingPinnedSidebarProjects}",
             $"Updated SQLite rows: {result.SqliteRowsUpdated}{(result.SqlitePresent ? string.Empty : " (state_5.sqlite not found)")}"
         ];
 

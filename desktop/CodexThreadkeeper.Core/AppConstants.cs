@@ -8,6 +8,8 @@ public static class AppConstants
     public const string DefaultProvider = "openai";
     public const string BackupNamespace = "threadkeeper";
     public const string DbFileBasename = "state_5.sqlite";
+    public const string GlobalStateFileBasename = ".codex-global-state.json";
+    public const string PinnedSidebarProjectsFileBasename = "threadkeeper-sidebar-projects.json";
     public const int DefaultBackupRetentionCount = 5;
     public static readonly string[] SessionDirectories = ["sessions", "archived_sessions"];
 
@@ -21,6 +23,16 @@ public static class AppConstants
     public static string DefaultBackupRoot(string codexHome)
     {
         return Path.Combine(codexHome, "backups_state", BackupNamespace);
+    }
+
+    public static string GlobalStatePath(string codexHome)
+    {
+        return Path.Combine(codexHome, GlobalStateFileBasename);
+    }
+
+    public static string PinnedSidebarProjectsPath(string codexHome)
+    {
+        return Path.Combine(codexHome, PinnedSidebarProjectsFileBasename);
     }
 
     public static string SettingsDirectory()

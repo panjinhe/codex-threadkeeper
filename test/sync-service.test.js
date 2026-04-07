@@ -13,6 +13,7 @@ import {
   restoreBackup,
   updateSessionBackupManifest
 } from "../src/backup.js";
+import { writePinnedProjects as persistPinnedProjects } from "../src/pinned-projects.js";
 import { getStatus, runRestore, runSwitch, runSync } from "../src/service.js";
 import { DEFAULT_BACKUP_RETENTION_COUNT } from "../src/constants.js";
 import { applySessionChanges, collectSessionChanges } from "../src/session-files.js";
@@ -108,6 +109,10 @@ async function writeGlobalState(codexHome, state) {
 
 async function readGlobalState(codexHome) {
   return JSON.parse(await fs.readFile(path.join(codexHome, ".codex-global-state.json"), "utf8"));
+}
+
+async function writePinnedProjects(codexHome, projects) {
+  await persistPinnedProjects(codexHome, projects);
 }
 
 async function writeStateDb(codexHome, rows) {
@@ -497,10 +502,69 @@ test("runSync adds missing sidebar projects even when rollout and sqlite provide
   assert.equal(result.changedSessionFiles, 0);
   assert.equal(result.sqliteRowsUpdated, 0);
   assert.equal(result.addedSidebarProjects, 1);
+  assert.equal(result.restoredPinnedSidebarProjects, 0);
+  assert.equal(result.skippedMissingPinnedSidebarProjects, 0);
 
   const globalState = await readGlobalState(codexHome);
   assert.deepEqual(globalState["electron-saved-workspace-roots"], ["E:\\MissingSidebar"]);
   assert.deepEqual(globalState["project-order"], ["E:\\MissingSidebar"]);
+});
+
+test("runSync restores pinned sidebar projects even when global state only keeps two projects", async () => {
+  const { codexHome, root } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  const pinnedProjects = [
+    path.join(root, "Playground"),
+    path.join(root, "RedNote-WebOps"),
+    path.join(root, "ahe-ai-video-workflow"),
+    path.join(root, "Skygarden"),
+    path.join(root, "minsy_mvp_frontend_v2"),
+    path.join(root, "Astock_Next"),
+    path.join(root, "codex-threadkeeper")
+  ];
+  for (const project of pinnedProjects) {
+    await fs.mkdir(project, { recursive: true });
+  }
+  await writeGlobalState(codexHome, {
+    "electron-saved-workspace-roots": [pinnedProjects[5], pinnedProjects[6]],
+    "project-order": [pinnedProjects[5], pinnedProjects[6]],
+    "active-workspace-roots": [pinnedProjects[6]]
+  });
+  await writePinnedProjects(codexHome, pinnedProjects);
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "openai");
+  await writeStateDb(codexHome, [
+    { id: "thread-a", model_provider: "openai", archived: false, cwd: pinnedProjects[5] }
+  ]);
+
+  const result = await runSync({ codexHome });
+  assert.equal(result.changedSessionFiles, 0);
+  assert.equal(result.sqliteRowsUpdated, 0);
+  assert.equal(result.addedSidebarProjects, 0);
+  assert.equal(result.restoredPinnedSidebarProjects, 5);
+  assert.equal(result.skippedMissingPinnedSidebarProjects, 0);
+
+  const globalState = await readGlobalState(codexHome);
+  assert.deepEqual(globalState["electron-saved-workspace-roots"], pinnedProjects.slice(5).concat(pinnedProjects.slice(0, 5)));
+  assert.deepEqual(globalState["project-order"], pinnedProjects.slice(5).concat(pinnedProjects.slice(0, 5)));
+  assert.deepEqual(globalState["active-workspace-roots"], [pinnedProjects[6]]);
+});
+
+test("runSync skips missing pinned sidebar projects and surfaces their count", async () => {
+  const { codexHome, root } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {});
+  await writePinnedProjects(codexHome, [path.join(root, "DefinitelyMissingPinnedProject")]);
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "openai");
+  await writeStateDb(codexHome, [
+    { id: "thread-a", model_provider: "openai", archived: false, cwd: "E:\\AnotherProject" }
+  ]);
+
+  const result = await runSync({ codexHome });
+  assert.equal(result.addedSidebarProjects, 0);
+  assert.equal(result.restoredPinnedSidebarProjects, 0);
+  assert.equal(result.skippedMissingPinnedSidebarProjects, 1);
 });
 
 test("runSync does not resurrect projects from bare sqlite cwd history", async () => {
@@ -585,6 +649,34 @@ test("runSync fails on invalid global state json and rolls back rollout/sqlite c
 
   const globalStateText = await fs.readFile(path.join(codexHome, ".codex-global-state.json"), "utf8");
   assert.equal(globalStateText, "{not valid json");
+});
+
+test("runSync fails on invalid pinned project json before mutating rollout or sqlite", async () => {
+  const { codexHome } = await makeTempCodexHome();
+  await writeConfig(codexHome, 'model_provider = "openai"');
+  await writeGlobalState(codexHome, {});
+  await fs.writeFile(path.join(codexHome, "threadkeeper-sidebar-projects.json"), "{broken", "utf8");
+  const sessionPath = path.join(codexHome, "sessions", "2026", "03", "19", "rollout-a.jsonl");
+  await writeRollout(sessionPath, "thread-a", "apigather");
+  await writeStateDb(codexHome, [
+    { id: "thread-a", model_provider: "apigather", archived: false, cwd: "E:\\BrokenPinned" }
+  ]);
+
+  await assert.rejects(
+    () => runSync({ codexHome }),
+    /Invalid threadkeeper-sidebar-projects\.json/
+  );
+
+  const rollout = await fs.readFile(sessionPath, "utf8");
+  assert.match(rollout, /"model_provider":"apigather"/);
+
+  const db = new DatabaseSync(path.join(codexHome, "state_5.sqlite"));
+  try {
+    const row = db.prepare("SELECT model_provider FROM threads WHERE id = ?").get("thread-a");
+    assert.equal(row.model_provider, "apigather");
+  } finally {
+    db.close();
+  }
 });
 
 test("applySessionChanges skips rollout files that changed after collection", async () => {
@@ -876,4 +968,32 @@ test("cli sync prints stage progress and backup timing", async () => {
   assert.match(result.stdout, /Backup created in .*: .+/);
   assert.match(result.stdout, /Backup creation time: /);
   assert.match(result.stdout, /Added sidebar projects: 1/);
+  assert.match(result.stdout, /Restored pinned sidebar projects: 0/);
+  assert.match(result.stdout, /Skipped missing pinned sidebar projects: 0/);
+});
+
+test("cli pin-project, list-pinned-projects, and unpin-project manage pinned projects", async () => {
+  const { codexHome } = await makeTempCodexHome();
+
+  let result = await runCli(["pin-project", "E:\\PinnedOne", "--codex-home", codexHome]);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /Pinned: E:\\PinnedOne/);
+
+  result = await runCli(["pin-project", "E:\\PinnedOne", "--codex-home", codexHome]);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /Already pinned: E:\\PinnedOne/);
+
+  result = await runCli(["list-pinned-projects", "--codex-home", codexHome]);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /Pinned projects: 1/);
+  assert.match(result.stdout, /E:\\PinnedOne/);
+
+  result = await runCli(["unpin-project", "E:\\PinnedOne", "--codex-home", codexHome]);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /Unpinned: E:\\PinnedOne/);
+
+  result = await runCli(["list-pinned-projects", "--codex-home", codexHome]);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /Pinned projects: 0/);
+  assert.match(result.stdout, /\(none\)/);
 });

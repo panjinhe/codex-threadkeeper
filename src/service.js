@@ -25,8 +25,9 @@ import {
 import { acquireLock } from "./locking.js";
 import {
   restoreGlobalStateSnapshot,
-  syncSidebarProjects
+  syncSidebarProjectsWithPinned
 } from "./global-state.js";
+import { readPinnedProjects } from "./pinned-projects.js";
 import {
   applySessionChanges,
   collectSessionChanges,
@@ -196,13 +197,22 @@ export async function runSync({
       durationMs: backupDurationMs
     });
     const sqliteProjectPaths = await readSqliteProjectPaths(codexHome);
+    const pinnedProjectState = await readPinnedProjects(codexHome);
 
     let sessionRestoreNeeded = false;
     let appliedSessionChanges = [];
     let globalStateRestoreSnapshot = null;
     try {
       let applyResult = { appliedChanges: 0, appliedPaths: [], skippedPaths: [] };
-      let sidebarSyncResult = { addedCount: 0, addedProjects: [], modified: false };
+      let sidebarSyncResult = {
+        addedCount: 0,
+        addedProjects: [],
+        modified: false,
+        pinnedAddedCount: 0,
+        pinnedAddedProjects: [],
+        skippedPinnedCount: 0,
+        skippedPinnedProjects: []
+      };
       emitProgress(onProgress, { stage: "update_sqlite", status: "start" });
       emitProgress(onProgress, {
         stage: "rewrite_rollout_files",
@@ -221,14 +231,16 @@ export async function runSync({
             await updateSessionBackupManifest(backupDir, appliedSessionChanges);
           }
           emitProgress(onProgress, { stage: "sync_sidebar_projects", status: "start" });
-          sidebarSyncResult = await syncSidebarProjects(codexHome, sqliteProjectPaths);
+          sidebarSyncResult = await syncSidebarProjectsWithPinned(codexHome, sqliteProjectPaths, pinnedProjectState.projects);
           if (sidebarSyncResult.modified) {
             globalStateRestoreSnapshot = sidebarSyncResult;
           }
           emitProgress(onProgress, {
             stage: "sync_sidebar_projects",
             status: "complete",
-            addedCount: sidebarSyncResult.addedCount
+            addedCount: sidebarSyncResult.addedCount,
+            pinnedAddedCount: sidebarSyncResult.pinnedAddedCount,
+            skippedPinnedCount: sidebarSyncResult.skippedPinnedCount
           });
         },
         { busyTimeoutMs: sqliteBusyTimeoutMs }
@@ -274,6 +286,8 @@ export async function runSync({
         backupDurationMs,
         changedSessionFiles: applyResult.appliedChanges,
         addedSidebarProjects: sidebarSyncResult.addedCount,
+        restoredPinnedSidebarProjects: sidebarSyncResult.pinnedAddedCount,
+        skippedMissingPinnedSidebarProjects: sidebarSyncResult.skippedPinnedCount,
         skippedLockedRolloutFiles,
         sqliteRowsUpdated: sqliteResult.updatedRows,
         sqlitePresent: sqliteResult.databasePresent,
