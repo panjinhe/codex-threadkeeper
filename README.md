@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> 本仓库已迁移到 [heyroute-ai/codex-threadkeeper](https://github.com/heyroute-ai/codex-threadkeeper)。后续维护和发布都在新仓库进行。
+
 <div align="center">
 
 # codex-threadkeeper
